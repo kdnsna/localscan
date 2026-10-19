@@ -19,8 +19,8 @@
 内容：XcodeGen 工程（`project.yml`）、SwiftUI 占位 App、单元测试 target、GitHub Actions（macos-latest，iOS 模拟器构建 + 单元测试）、文档。
 
 验收：
-- [ ] `xcodegen generate && xcodebuild test` 在 CI 上通过（main 分支绿色）。
-- [ ] README、PLAN、ADR-0001、CONTRIBUTING、调研资料已入库。
+- [x] `xcodegen generate && xcodebuild test` 在 CI 上通过（main 分支绿色）。
+- [x] README、PLAN、ADR-0001、CONTRIBUTING、调研资料已入库。
 
 ### M1：MVP——拍摄、自动找边、透视拉正、导出
 内容：
