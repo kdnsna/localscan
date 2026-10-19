@@ -2,8 +2,14 @@ import CoreGraphics
 
 /// 自动拍摄触发：连续 N 帧角点稳定、倾斜和面积达标时返回一次 true。
 /// 触发后进入冷却，直到调用 `reset()`。
+///
+/// `requiredFrames` 计的是“稳定帧”的数量，包含第一帧。第一帧没有前帧可比，
+/// 所以默认 `requiredFrames = 4` 实际做的是 3 次相邻帧比较；实现与
+/// `feed` 中的 `stableFrameCount` 计数一致。
+/// 倾斜用四个内角偏离 90° 的最大值近似（见 `QuadGeometry.maxTiltDegrees`）。
 struct StabilityDetector {
     struct Config {
+        /// 需要连续稳定的帧数（含首帧），因此相邻帧比较次数为 `requiredFrames - 1`。
         var requiredFrames: Int
         var maxDisplacementFraction: CGFloat
         var maxTiltDegrees: Double

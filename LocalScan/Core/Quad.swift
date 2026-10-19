@@ -74,31 +74,58 @@ struct Quad: Equatable {
         zip(corners, other.corners).map { Quad.distance($0.0, $0.1) }.max() ?? 0
     }
 
+    /// 四个角点坐标是否全部有限（非 NaN、非无穷）。
+    var isFinite: Bool {
+        corners.allSatisfy { $0.x.isFinite && $0.y.isFinite }
+    }
+
     /// 把 4 个任意顺序的点排成 TL、TR、BR、BL。屏幕坐标 y 向下，极角升序即顺时针。
+    ///
+    /// 这里只负责排序，**不验证形状**：凹四边形、共线点会得到一个可能自交或面积为 0
+    /// 的四边形，调用方必须自己检查 `isConvex` 和 `area`。
+    ///
+    /// 任一点含 NaN/无穷时返回 `.zero`（无法可靠排序）。
+    /// 左上角取 x+y 最小者；并列时依次取 y 更小、x 更小者。同极角（共线/重合）时
+    /// 先按到中心距离从远到近，再按 y、x 排序，保证输入顺序不影响结果。
     static func ordered(from points: [CGPoint]) -> Quad {
         precondition(points.count == 4, "Quad.ordered 需要恰好 4 个点")
+        guard points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }) else {
+            return .zero
+        }
         let center = CGPoint(
             x: points.reduce(CGFloat.zero) { $0 + $1.x } / CGFloat(points.count),
             y: points.reduce(CGFloat.zero) { $0 + $1.y } / CGFloat(points.count)
         )
-        var sorted = points.sorted {
-            atan2(Double($0.y - center.y), Double($0.x - center.x))
-                < atan2(Double($1.y - center.y), Double($1.x - center.x))
+        var sorted = points.sorted { a, b in
+            let angleA = atan2(Double(a.y - center.y), Double(a.x - center.x))
+            let angleB = atan2(Double(b.y - center.y), Double(b.x - center.x))
+            if angleA != angleB { return angleA < angleB }
+
+            let radiusA = (a.x - center.x) * (a.x - center.x)
+                + (a.y - center.y) * (a.y - center.y)
+            let radiusB = (b.x - center.x) * (b.x - center.x)
+                + (b.y - center.y) * (b.y - center.y)
+            if radiusA != radiusB { return radiusA > radiusB }
+            if a.y != b.y { return a.y < b.y }
+            return a.x < b.x
         }
 
-        // 旋转到 x+y 最小的点作为左上角；并列时取更靠上的点。
+        // 旋转到 x+y 最小的点作为左上角；显式字典序并列规则保证结果确定。
         var start = 0
-        for i in 1..<sorted.count {
-            let a = sorted[i]
-            let b = sorted[start]
-            if a.x + a.y < b.x + b.y
-                || (a.x + a.y == b.x + b.y && a.y < b.y) {
-                start = i
-            }
+        for i in 1..<sorted.count where isTopLeftCandidate(sorted[i], than: sorted[start]) {
+            start = i
         }
         sorted = (0..<4).map { sorted[(start + $0) % 4] }
         return Quad(topLeft: sorted[0], topRight: sorted[1],
                     bottomRight: sorted[2], bottomLeft: sorted[3])
+    }
+
+    private static func isTopLeftCandidate(_ a: CGPoint, than b: CGPoint) -> Bool {
+        let sumA = a.x + a.y
+        let sumB = b.x + b.y
+        if sumA != sumB { return sumA < sumB }
+        if a.y != b.y { return a.y < b.y }
+        return a.x < b.x
     }
 
     /// 找边失败时的默认四边形：四边各向内缩 `inset`（默认 6%）。

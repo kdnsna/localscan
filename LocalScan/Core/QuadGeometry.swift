@@ -4,13 +4,19 @@ import Foundation
 /// 四边形相关的纯几何计算。
 enum QuadGeometry {
     /// 透视校正输出尺寸：对边长度取平均后四舍五入。
+    /// 任一角点非有限（NaN/无穷）时返回 `.zero`。
     static func outputSize(for quad: Quad) -> CGSize {
+        guard quad.isFinite else { return .zero }
         let top = distance(quad.topLeft, quad.topRight)
         let bottom = distance(quad.bottomLeft, quad.bottomRight)
         let left = distance(quad.topLeft, quad.bottomLeft)
         let right = distance(quad.topRight, quad.bottomRight)
-        return CGSize(width: ((top + bottom) * 0.5).rounded(),
-                      height: ((left + right) * 0.5).rounded())
+        let width = ((top + bottom) * 0.5).rounded()
+        let height = ((left + right) * 0.5).rounded()
+        guard width.isFinite, height.isFinite, width >= 0, height >= 0 else {
+            return .zero
+        }
+        return CGSize(width: width, height: height)
     }
 
     /// 四个内角偏离 90° 的最大值（度）。

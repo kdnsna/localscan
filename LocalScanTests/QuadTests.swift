@@ -9,6 +9,43 @@ final class QuadTests: XCTestCase {
         XCTAssertEqual(Quad.ordered(from: shuffled), expected)
     }
 
+    func testOrderingIsDeterministicForDiamondTie() {
+        // 菱形上、左两点 x+y 相同；按 y 更小选上面的点作为 TL。
+        let points = [CGPoint(x: 100, y: 50), CGPoint(x: 50, y: 100),
+                      CGPoint(x: 0, y: 50), CGPoint(x: 50, y: 0)]
+        let expected = Quad(topLeft: CGPoint(x: 50, y: 0),
+                            topRight: CGPoint(x: 100, y: 50),
+                            bottomRight: CGPoint(x: 50, y: 100),
+                            bottomLeft: CGPoint(x: 0, y: 50))
+        for shift in points.indices {
+            let rotated = Array(points[shift...]) + Array(points[..<shift])
+            XCTAssertEqual(Quad.ordered(from: rotated), expected)
+        }
+    }
+
+    func testOrderingDegenerateInputsDoesNotCrash() {
+        // 凹点集：只排序、不修复；调用方需检查 isConvex。
+        let concave = Quad.ordered(from: [CGPoint(x: 0, y: 0),
+                                          CGPoint(x: 100, y: 0),
+                                          CGPoint(x: 100, y: 100),
+                                          CGPoint(x: 50, y: 50)])
+        XCTAssertFalse(concave.isConvex)
+        XCTAssertGreaterThan(concave.area, 0)
+
+        let collinear = Quad.ordered(from: [CGPoint(x: 0, y: 0),
+                                            CGPoint(x: 10, y: 0),
+                                            CGPoint(x: 20, y: 0),
+                                            CGPoint(x: 30, y: 0)])
+        XCTAssertEqual(collinear.area, 0, accuracy: 1e-9)
+        XCTAssertFalse(collinear.isConvex)
+
+        let nan = Quad.ordered(from: [CGPoint(x: CGFloat.nan, y: 0),
+                                      CGPoint(x: 10, y: 0),
+                                      CGPoint(x: 10, y: 10),
+                                      CGPoint(x: 0, y: 10)])
+        XCTAssertEqual(nan, .zero)
+    }
+
     func testMappingRoundTrip() {
         let quad = QuadFixtures.rect(100, 50, 800, 600)
         let working = CGSize(width: 1024, height: 768)
