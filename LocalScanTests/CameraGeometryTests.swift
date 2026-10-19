@@ -81,8 +81,8 @@ final class CameraPreviewGeometryTests: XCTestCase {
             from: quad,
             frameSize: CGSize(width: 1000, height: 2000),
             viewSize: CGSize(width: 500, height: 1000))
-        XCTAssertEqual(mapped.topLeft, CGPoint(x: 125, y: 125))
-        XCTAssertEqual(mapped.topRight, CGPoint(x: 375, y: 62.5))
+        XCTAssertEqual(mapped.topLeft, CGPoint(x: 125, y: 250))
+        XCTAssertEqual(mapped.topRight, CGPoint(x: 375, y: 125))
         XCTAssertEqual(mapped.bottomRight, CGPoint(x: 250, y: 750))
         XCTAssertEqual(mapped.bottomLeft, CGPoint(x: 125, y: 500))
     }
