@@ -1,4 +1,5 @@
 import CoreGraphics
+@testable import LocalScan
 
 /// 测试用内存图像工具：只画在 CGContext 里，不读写任何文件。
 enum TestImages {
