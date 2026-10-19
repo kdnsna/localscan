@@ -1,0 +1,29 @@
+# XcodeGen 生成物（以 project.yml 为准）
+*.xcodeproj/
+*.xcworkspace/
+!*.xcodeproj/project.xcworkspace/
+DerivedData/
+build/
+*.xcresult
+xcuserdata/
+.DS_Store
+.swiftpm/
+
+# 真实照片 / 测试集一律不进仓库（见 docs/PLAN.md 硬规则）
+testdata/
+eval/data/
+*.heic
+*.HEIC
+*.jpg
+*.jpeg
+*.JPG
+*.png
+!docs/**/*.png
+
+# 模型权重默认不进 git，用脚本下载并校验 SHA-256（见 CONTRIBUTING.md）
+*.mlmodel
+*.mlpackage/
+*.mlmodelc/
+*.onnx
+*.pt
+*.pth

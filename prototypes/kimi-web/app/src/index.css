@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 8% 4%;
+    --foreground: 40 30% 97%;
+    --card: 28 7% 8%;
+    --card-foreground: 40 30% 97%;
+    --popover: 28 7% 8%;
+    --popover-foreground: 40 30% 97%;
+    --primary: 9 76% 48%;
+    --primary-foreground: 40 30% 98%;
+    --secondary: 28 6% 13%;
+    --secondary-foreground: 40 30% 97%;
+    --muted: 28 6% 13%;
+    --muted-foreground: 35 8% 62%;
+    --accent: 9 76% 48%;
+    --accent-foreground: 40 30% 98%;
+    --destructive: 0 72% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 30 6% 16%;
+    --input: 30 6% 18%;
+    --ring: 9 76% 48%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      "Avenir Next", "Helvetica Neue", -apple-system, "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.01em;
+    overscroll-behavior: none;
+  }
+  ::selection {
+    background: hsl(var(--primary));
+    color: hsl(var(--primary-foreground));
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  .safe-bottom {
+    padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  }
+  .safe-top {
+    padding-top: max(env(safe-area-inset-top), 0px);
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* 扫描光束：处理 / OCR 时扫过画面 */
+.scanbeam {
+  position: absolute;
+  inset-inline: -12%;
+  height: 34%;
+  top: -40%;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      120% 90% at 50% 100%,
+      rgba(50, 69, 255, 0.32),
+      rgba(188, 82, 238, 0) 70%
+    ),
+    linear-gradient(
+      100deg,
+      rgba(50, 69, 255, 0) 8%,
+      rgba(50, 69, 255, 0.5) 42%,
+      rgba(188, 82, 238, 0.55) 58%,
+      rgba(188, 82, 238, 0) 92%
+    );
+  filter: blur(6px);
+  animation: scan-sweep 1.6s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+.scanbeam::after {
+  content: "";
+  position: absolute;
+  inset-inline: 10%;
+  bottom: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(148, 130, 255, 0.95),
+    transparent
+  );
+  filter: blur(0.5px);
+}
+@keyframes scan-sweep {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(420%);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scanbeam {
+    animation: none;
+    opacity: 0.5;
+    top: 33%;
+  }
+}
+
+/* 取景框角括号（不重置 border-width，交由 Tailwind 的 border-l/t/r/b-* 控制） */
+.viewfinder-corner {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-color: hsl(var(--primary));
+  border-style: solid;
+}
+
+/* 角点拖拽手柄 */
+.corner-handle {
+  touch-action: none;
+  cursor: grab;
+}
+.corner-handle:active {
+  cursor: grabbing;
+}
