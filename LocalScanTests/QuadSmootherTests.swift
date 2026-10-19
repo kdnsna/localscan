@@ -34,4 +34,15 @@ final class QuadSmootherTests: XCTestCase {
         XCTAssertNotEqual(halfway, end)
         XCTAssertEqual(smoother.update(end, dt: 0.1)!, end)
     }
+
+    func testNonFiniteAndNegativeDeltasAreTreatedAsZero() {
+        var smoother = QuadSmoother(duration: 0.2, dropAfter: 1)
+        let start = QuadFixtures.rect(0, 0, 100, 100)
+        let end = QuadFixtures.rect(100, 0, 100, 100)
+
+        XCTAssertEqual(smoother.update(start, dt: 0)!, start)
+        XCTAssertEqual(smoother.update(end, dt: .nan)!, start)
+        XCTAssertEqual(smoother.update(end, dt: -.infinity)!, start)
+        XCTAssertEqual(smoother.update(end, dt: -0.5)!, start)
+    }
 }

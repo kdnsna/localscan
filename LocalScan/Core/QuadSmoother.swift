@@ -19,7 +19,8 @@ struct QuadSmoother {
     }
 
     mutating func update(_ new: Quad?, dt: Double) -> Quad? {
-        let step = max(0, dt)
+        // 非有限（NaN/无穷）或负的时间步按 0 处理，避免污染计时。
+        let step = dt.isFinite ? max(0, dt) : 0
 
         guard let new = new else {
             timeSinceDetection += step

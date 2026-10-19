@@ -12,6 +12,12 @@ final class QuadGeometryTests: XCTestCase {
                        CGSize(width: 980, height: 1414))
     }
 
+    func testOutputSizeIsZeroForNonFiniteCorner() {
+        var quad = QuadFixtures.rect(0, 0, 300, 200)
+        quad.topLeft.x = .nan
+        XCTAssertEqual(QuadGeometry.outputSize(for: quad), .zero)
+    }
+
     func testRectangleHasNoTilt() {
         let quad = QuadFixtures.rect(0, 0, 300, 200)
         XCTAssertEqual(QuadGeometry.maxTiltDegrees(quad), 0, accuracy: 1e-6)
