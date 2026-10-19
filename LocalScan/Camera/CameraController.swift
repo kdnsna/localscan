@@ -17,10 +17,13 @@ final class CameraController: NSObject, ObservableObject {
     @Published private(set) var lastCapturedData: Data?
     @Published private(set) var overlayQuad: Quad?
     @Published private(set) var detectedFrameSize: CGSize = .zero
+    @Published private(set) var isInterrupted = false
+    @Published private(set) var interruptionHint: String?
     @Published var isAutoCaptureEnabled = true {
         didSet {
-            guard !isAutoCaptureEnabled else { return }
-            stability.reset()
+            guard isAutoCaptureEnabled != oldValue else { return }
+            // 切换自动拍摄属于手动操作：重新开始累计，关闭时门控也绝不喂帧。
+            autoCaptureGate.isEnabled = isAutoCaptureEnabled
         }
     }
 
@@ -35,12 +38,29 @@ final class CameraController: NSObject, ObservableObject {
     private let captureLock = NSLock()
 
     private var smoother = QuadSmoother()
-    private var stability = StabilityDetector()
+    /// 仅在主线程访问（检测回调、开关和会话状态发布都在主线程）。
+    private var autoCaptureGate = AutoCaptureGate()
+    /// 最近一帧原始检测框（仅主线程读写），手动拍摄后用作锁存基准。
+    private var lastDetectedQuad: Quad?
     private var isConfigured = false
     private var isRequestingAuthorization = false
     private var isCaptureInFlight = false
     private var captureCompletion: ((Data?) -> Void)?
-    private var lastDetectionTime = CACurrentMediaTime()
+    /// 仅在 videoQueue 上读写，避免视频帧回调和会话队列之间的数据竞争。
+    private var lastDetectionTime: CFTimeInterval?
+    private var notificationTokens: [NSObjectProtocol] = []
+
+    override init() {
+        super.init()
+        observeSessionNotifications()
+    }
+
+    deinit {
+        let center = NotificationCenter.default
+        for token in notificationTokens {
+            center.removeObserver(token)
+        }
+    }
 
     // MARK: - Lifecycle
 
@@ -81,9 +101,11 @@ final class CameraController: NSObject, ObservableObject {
             if self.session.isRunning { self.session.stopRunning() }
             DispatchQueue.main.async {
                 self.isRunning = false
+                self.isInterrupted = false
+                self.interruptionHint = nil
                 self.overlayQuad = nil
                 self.smoother = QuadSmoother()
-                self.stability.reset()
+                self.autoCaptureGate.reset()
             }
         }
     }
@@ -95,16 +117,46 @@ final class CameraController: NSObject, ObservableObject {
                 guard self.configureSession() else { return }
                 self.isConfigured = true
             }
-            if !self.session.isRunning {
-                self.lastDetectionTime = CACurrentMediaTime()
-                self.session.startRunning()
-            }
+            self.startSessionIfNeeded()
             // 配置提交并启动后才能拿到照片输出连接，竖屏旋转放在这里设置。
             if let connection = self.photoOutput.connection(with: .video),
                connection.isVideoRotationAngleSupported(90) {
                 connection.videoRotationAngle = 90
             }
-            DispatchQueue.main.async { self.isRunning = self.session.isRunning }
+            let isRunning = self.session.isRunning
+            DispatchQueue.main.async {
+                self.isRunning = isRunning
+                if isRunning {
+                    self.isInterrupted = false
+                    self.interruptionHint = nil
+                }
+            }
+        }
+    }
+
+    /// 仅在 sessionQueue 上调用。
+    private func startSessionIfNeeded() {
+        guard !session.isRunning else { return }
+        // lastDetectionTime 只属于 videoQueue，重置任务排在启动帧之前。
+        videoQueue.async { [weak self] in
+            self?.lastDetectionTime = CACurrentMediaTime()
+        }
+        session.startRunning()
+    }
+
+    /// 中断结束或媒体服务重置后恢复会话；仅在 sessionQueue 上调用。
+    private func restartSessionAfterInterruption() {
+        sessionQueue.async { [weak self] in
+            guard let self, self.isConfigured else { return }
+            self.startSessionIfNeeded()
+            let isRunning = self.session.isRunning
+            DispatchQueue.main.async {
+                self.isRunning = isRunning
+                if isRunning {
+                    self.isInterrupted = false
+                    self.interruptionHint = nil
+                }
+            }
         }
     }
 
@@ -152,8 +204,19 @@ final class CameraController: NSObject, ObservableObject {
 
     // MARK: - Capture
 
-    /// 拍摄一张照片；HEIC 可用时输出 HEIC 数据。completion 在主线程回调。
+    /// 手动拍摄一张照片；HEIC 可用时输出 HEIC 数据。completion 在主线程回调。
+    /// 手动拍摄成功后，以当前检测框为基准锁存自动拍摄：手机不动时不会再自动拍同一页，
+    /// 只有出现不稳定或换页后才重新计数。
     func capturePhoto(completion: ((Data?) -> Void)? = nil) {
+        requestCapture { [weak self] data in
+            if data != nil, let self {
+                self.autoCaptureGate.latchAfterManualCapture(reference: self.lastDetectedQuad)
+            }
+            completion?(data)
+        }
+    }
+
+    private func requestCapture(completion: ((Data?) -> Void)? = nil) {
         sessionQueue.async { [weak self] in
             guard let self else { return }
             guard self.isConfigured, self.session.isRunning,
@@ -199,11 +262,96 @@ final class CameraController: NSObject, ObservableObject {
     private func handleDetection(_ quad: Quad?, dt: Double, frameSize: CGSize) {
         if detectedFrameSize != frameSize { detectedFrameSize = frameSize }
         overlayQuad = smoother.update(quad, dt: dt)
+        lastDetectedQuad = quad
 
-        guard isAutoCaptureEnabled else { return }
-        if stability.feed(quad, frameSize: frameSize) {
-            stability.reset()
-            capturePhoto()
+        if autoCaptureGate.feed(quad, frameSize: frameSize) {
+            // 触发后由 StabilityDetector 保持锁存，不能在这里 reset，否则会重复拍摄。
+            requestCapture()
+        }
+    }
+
+    // MARK: - Session Notifications
+
+    private func observeSessionNotifications() {
+        let center = NotificationCenter.default
+        let session = self.session
+        notificationTokens = [
+            center.addObserver(forName: AVCaptureSession.wasInterruptedNotification,
+                               object: session,
+                               queue: nil) { [weak self] notification in
+                self?.handleSessionWasInterrupted(notification)
+            },
+            center.addObserver(forName: AVCaptureSession.interruptionEndedNotification,
+                               object: session,
+                               queue: nil) { [weak self] _ in
+                self?.handleSessionInterruptionEnded()
+            },
+            center.addObserver(forName: AVCaptureSession.runtimeErrorNotification,
+                               object: session,
+                               queue: nil) { [weak self] notification in
+                self?.handleSessionRuntimeError(notification)
+            }
+        ]
+    }
+
+    private func handleSessionWasInterrupted(_ notification: Notification) {
+        let rawReason = (notification.userInfo?[AVCaptureSessionInterruptionReasonKey]
+            as? NSNumber)?.intValue
+        let reason = rawReason.flatMap {
+            AVCaptureSession.InterruptionReason(rawValue: $0)
+        }
+        publishInterruption(hint: Self.hint(for: reason))
+    }
+
+    private func handleSessionInterruptionEnded() {
+        DispatchQueue.main.async { [weak self] in
+            // 中断结束后同样锁存：手机没动时不重复拍同一页。
+            guard let self else { return }
+            self.autoCaptureGate.latchAfterManualCapture(reference: self.lastDetectedQuad)
+        }
+        restartSessionAfterInterruption()
+    }
+
+    private func handleSessionRuntimeError(_ notification: Notification) {
+        let error = notification.userInfo?[AVCaptureSessionErrorKey] as? AVError
+        let shouldRestart = error?.code == .mediaServicesWereReset
+        let hint = shouldRestart
+            ? "相机媒体服务已重置，正在尝试恢复。"
+            : "相机被系统中断（来电、分屏或相机被占用）。"
+        publishInterruption(hint: hint)
+        if shouldRestart {
+            restartSessionAfterInterruption()
+        }
+    }
+
+    private func publishInterruption(hint: String) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.isInterrupted = true
+            self.interruptionHint = hint
+            self.isRunning = self.session.isRunning
+            // 中断期间没有新帧，清除旧的稳定锁存，恢复后重新累计。
+            self.autoCaptureGate.reset()
+        }
+    }
+
+    private static func hint(for reason: AVCaptureSession.InterruptionReason?) -> String {
+        guard let reason else {
+            return "相机被系统中断（如来电）。"
+        }
+        switch reason {
+        case .videoDeviceInUseByAnotherClient:
+            return "相机被其他 App 占用。"
+        case .videoDeviceNotAvailableWithMultipleForegroundApps:
+            return "分屏或悬浮窗口下相机不可用。"
+        case .videoDeviceNotAvailableInBackground:
+            return "相机在后台不可用。"
+        case .audioDeviceInUseByAnotherClient:
+            return "麦克风被其他 App 占用。"
+        case .videoDeviceNotAvailableDueToSystemPressure:
+            return "系统资源紧张，相机暂时不可用。"
+        @unknown default:
+            return "相机被系统中断（如来电、分屏或相机被占用）。"
         }
     }
 
@@ -221,7 +369,12 @@ extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
                        from connection: AVCaptureConnection) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
         let now = CACurrentMediaTime()
-        let dt = max(0, now - lastDetectionTime)
+        let dt: Double
+        if let lastDetectionTime {
+            dt = max(0, now - lastDetectionTime)
+        } else {
+            dt = 0
+        }
 
         // 传感器 buffer 是横向的；Vision 以 .right 旋转后，角点对应竖向画面。
         let frameSize = CGSize(width: CGFloat(CVPixelBufferGetHeight(pixelBuffer)),
@@ -249,7 +402,6 @@ extension CameraController: AVCapturePhotoCaptureDelegate {
         DispatchQueue.main.async {
             self.lastCapturedData = data
             self.errorMessage = nil
-            self.stability.reset()
             completion?(data)
         }
     }

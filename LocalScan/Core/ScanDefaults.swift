@@ -22,6 +22,8 @@ enum ScanDefaults {
     static let autoCaptureRequiredFrames = 4
     /// 自动拍摄：相邻帧最大角点位移（占四边形对角线比例）。
     static let autoCaptureMaxDisplacementFraction: CGFloat = 0.015
+    /// 自动拍摄：锁存后与触发时页面相比，判定为“换页”的角点位移（占对角线比例）。
+    static let autoCapturePageChangeDisplacementFraction: CGFloat = 0.15
     /// 自动拍摄：四边形最小面积（占画面比例）。
     static let autoCaptureMinAreaFraction: CGFloat = 0.15
 }
