@@ -32,9 +32,6 @@ enum ImageExportFormat: String, CaseIterable, Identifiable {
     }
 }
 
-typealias ExportFormat = ImageExportFormat
-typealias ImageFormat = ImageExportFormat
-
 enum ImageExportError: Error, Equatable {
     case invalidImage
     /// 当前环境没有对应的 ImageIO 编码器（HEIC 在部分模拟器上不可用）。
@@ -80,12 +77,6 @@ enum ImageExporter {
         return data as Data
     }
 
-    static func encode(_ image: CGImage,
-                       format: Format,
-                       quality: Double = defaultQuality) throws -> Data {
-        try encode(image, as: format, quality: quality)
-    }
-
     /// 临时文件名形如 `Scan-001.jpg`；索引从 1 开始。
     static func temporaryURL(for format: Format, index: Int = 1) -> URL {
         let number = max(1, index)
@@ -106,13 +97,5 @@ enum ImageExporter {
             throw ImageExportError.writeFailed
         }
         return url
-    }
-
-    @discardableResult
-    static func writeTemporaryFile(for image: CGImage,
-                                   format: Format,
-                                   index: Int = 1,
-                                   quality: Double = defaultQuality) throws -> URL {
-        try writeTemporaryFile(image, format: format, index: index, quality: quality)
     }
 }
