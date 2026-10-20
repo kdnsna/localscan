@@ -9,12 +9,27 @@ struct PageStrip: View {
     @ObservedObject var session: ScanSession
     let onSelect: (UUID) -> Void
 
+    @State private var showExport = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("页面 \(session.pageCount)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white.opacity(0.9))
-                .padding(.horizontal, 16)
+            HStack {
+                Text("页面 \(session.pageCount)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                Spacer()
+                Button {
+                    showExport = true
+                } label: {
+                    Label("导出", systemImage: "square.and.arrow.up")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(session.pageCount == 0)
+                .accessibilityLabel("导出页面")
+            }
+            .padding(.horizontal, 16)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
@@ -38,6 +53,9 @@ struct PageStrip: View {
         }
         .padding(.vertical, 8)
         .background(.black.opacity(0.55))
+        .sheet(isPresented: $showExport) {
+            ExportSheet(session: session)
+        }
     }
 
     @ViewBuilder
