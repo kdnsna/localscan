@@ -271,9 +271,11 @@ struct CornerEditorView: View {
                                                     imageSize: workingSize,
                                                     viewSize: viewSize),
                     to: workingSize)
-                quad = CornerEditorGeometry.replacingCorner(start,
-                                                            index: index,
-                                                            with: imagePoint)
+                // 非凸/退化位置被拒绝：角点停在最后一个合法位置。
+                quad = CornerEditorGeometry.dragging(quad,
+                                                     index: index,
+                                                     to: imagePoint,
+                                                     imageSize: workingSize)
             }
             .onEnded { _ in
                 dragStart = nil
@@ -323,6 +325,7 @@ struct CornerEditorView: View {
                 dismiss()
             }
             .buttonStyle(.borderedProminent)
+            .disabled(!CornerEditorGeometry.isConfirmable(quad, imageSize: workingSize))
         }
         .padding()
         .background(.regularMaterial)

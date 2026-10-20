@@ -45,4 +45,27 @@ final class CornerEditorGeometryTests: XCTestCase {
         XCTAssertEqual(updated.topRight, quad.topRight)
         XCTAssertEqual(updated.bottomLeft, quad.bottomLeft)
     }
+
+    func testDraggingRejectsNonConvexPosition() {
+        let quad = Quad.insetDefault(for: imageSize)
+        // 把左上角拖到右下角内侧 -> 凹/自交，应被拒绝。
+        let rejected = CornerEditorGeometry.dragging(quad, index: 0,
+                                                     to: CGPoint(x: 800, y: 400),
+                                                     imageSize: imageSize)
+        XCTAssertEqual(rejected, quad)
+        let moved = CornerEditorGeometry.dragging(quad, index: 0,
+                                                  to: CGPoint(x: 10, y: 10),
+                                                  imageSize: imageSize)
+        XCTAssertEqual(moved.topLeft, CGPoint(x: 10, y: 10))
+    }
+
+    func testConfirmableRequiresConvexNonDegenerateQuad() {
+        XCTAssertTrue(CornerEditorGeometry.isConfirmable(Quad.insetDefault(for: imageSize),
+                                                         imageSize: imageSize))
+        let concave = Quad(topLeft: CGPoint(x: 0, y: 0), topRight: CGPoint(x: 1000, y: 0),
+                           bottomRight: CGPoint(x: 1000, y: 500),
+                           bottomLeft: CGPoint(x: 500, y: 250))
+        XCTAssertFalse(CornerEditorGeometry.isConfirmable(concave, imageSize: imageSize))
+        XCTAssertFalse(CornerEditorGeometry.isConfirmable(.zero, imageSize: imageSize))
+    }
 }

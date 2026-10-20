@@ -49,4 +49,19 @@ enum CornerEditorGeometry {
         }
         return result
     }
+
+    /// 编辑器里可以确认的四边形：有限、凸、面积不小于工作图面积的 1e-6（且至少 1 px²）。
+    static func isConfirmable(_ quad: Quad, imageSize: CGSize) -> Bool {
+        guard imageSize.width > 0, imageSize.height > 0 else { return false }
+        let minimumArea = max(CGFloat(1), imageSize.width * imageSize.height * 1e-6)
+        return quad.isFinite && quad.isConvex
+            && quad.area.isFinite && quad.area >= minimumArea
+    }
+
+    /// 拖动一个角点：结果非凸/退化时保持原四边形不变（拒绝该位置）。
+    static func dragging(_ quad: Quad, index: Int, to point: CGPoint,
+                         imageSize: CGSize) -> Quad {
+        let candidate = replacingCorner(quad, index: index, with: point)
+        return isConfirmable(candidate, imageSize: imageSize) ? candidate : quad
+    }
 }
