@@ -79,15 +79,20 @@ struct ScanDocument {
         return pages.remove(at: index)
     }
 
+    /// 与 SwiftUI `move(fromOffsets:toOffset:)` 语义一致：`destination` 是移动前数组里的插入位置。
+    /// 越界的来源索引忽略，目标位置夹到 `0...pages.count`。
     mutating func move(fromOffsets source: IndexSet, toOffset destination: Int) {
-        guard !pages.isEmpty else { return }
-        var result = pages
-        for index in source.sorted(by: >) where result.indices.contains(index) {
-            var target = destination > index ? destination - 1 : destination
-            target = min(max(0, target), result.count)
-            result.insert(result.remove(at: index), at: target)
+        let valid = source.sorted().filter { pages.indices.contains($0) }
+        guard !valid.isEmpty else { return }
+        let clamped = min(max(0, destination), pages.count)
+        let moving = valid.map { pages[$0] }
+        let insertAt = clamped - valid.filter { $0 < clamped }.count
+        var remaining = pages
+        for index in valid.reversed() {
+            remaining.remove(at: index)
         }
-        pages = result
+        remaining.insert(contentsOf: moving, at: insertAt)
+        pages = remaining
     }
 
     /// 把 `id` 拖到 `targetID` 之前（页面条拖拽排序）。

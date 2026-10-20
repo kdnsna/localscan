@@ -46,6 +46,14 @@ final class ScanDocumentTests: XCTestCase {
         // 越界来源安全忽略。
         document.move(fromOffsets: IndexSet(integer: 99), toOffset: 0)
         XCTAssertEqual(document.pages.map(\.id), [a.id, b.id, c.id])
+
+        // 多选移动：与 SwiftUI 语义一致。
+        let d = page(x: 40)
+        var multi = ScanDocument(pages: [a, b, c, d])
+        multi.move(fromOffsets: IndexSet([0, 2]), toOffset: 4)
+        XCTAssertEqual(multi.pages.map(\.id), [b.id, d.id, a.id, c.id])
+        multi.move(fromOffsets: IndexSet([2, 3]), toOffset: 1)
+        XCTAssertEqual(multi.pages.map(\.id), [b.id, a.id, c.id, d.id])
     }
 
     func testReplaceKeepsIDAndPositionForRetake() {
