@@ -167,14 +167,14 @@ final class ScanSession: ObservableObject {
                                                          working: decoded.working,
                                                          quad: quad,
                                                          workingSize: decoded.workingSize)
-                    guard let self, self.tokens[targetID] == token,
+                    guard self.tokens[targetID] == token,
                           self.document.page(id: targetID) != nil else { return }
                     self.tokens[targetID] = nil
                     self.document.updateImage(id: targetID, image: result.image)
                     self.document.updateQuad(id: targetID, quad: result.quad)
                     self.document.updateState(id: targetID, state: .done)
                 } catch {
-                    guard let self, self.tokens[targetID] == token else { return }
+                    guard self.tokens[targetID] == token else { return }
                     self.tokens[targetID] = nil
                     self.document.updateState(id: targetID, state: .failed)
                     self.errorMessage = "这一页处理失败，请重试。"
