@@ -209,8 +209,9 @@ final class CameraController: NSObject, ObservableObject {
     /// 只有出现不稳定或换页后才重新计数。
     func capturePhoto(completion: ((Data?) -> Void)? = nil) {
         requestCapture { [weak self] data in
-            if data != nil, let self {
-                self.autoCaptureGate.latchAfterManualCapture(reference: self.lastDetectedQuad)
+            if let self {
+                self.autoCaptureGate.handleManualCaptureResult(succeeded: data != nil,
+                                                               reference: self.lastDetectedQuad)
             }
             completion?(data)
         }

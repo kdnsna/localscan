@@ -94,10 +94,17 @@ struct StabilityDetector {
 
     /// 主动锁存（手动拍摄成功后、重新打开自动拍摄时）：以 `reference`
     /// （缺省为最近一帧）作为换页判定基准，直到稳定被打破或换页才会再次累计。
+    /// 没有任何基准框（`reference` 与最近一帧都为 nil）时不锁存，只清零稳定计数：
+    /// 否则换页判定无从比较，锁存永远解不开，自动拍摄会失效。
     mutating func latch(reference: Quad? = nil) {
         stableFrameCount = 0
+        guard let base = reference ?? previous else {
+            isLatched = false
+            triggeredQuad = nil
+            return
+        }
         isLatched = true
-        triggeredQuad = reference ?? previous
+        triggeredQuad = base
     }
 
     /// 解锁：下一次连续 N 帧稳定可再次触发。保留当前帧作为位移基准。
@@ -150,6 +157,12 @@ struct AutoCaptureGate {
     /// 手动拍摄成功后调用：以当前框为基准锁存，防止自动再拍同一页。
     mutating func latchAfterManualCapture(reference: Quad?) {
         detector.latch(reference: reference)
+    }
+
+    /// 控制器在手动拍摄回调里调用：只有成功拍到（`succeeded`）才锁存；失败不改变状态。
+    mutating func handleManualCaptureResult(succeeded: Bool, reference: Quad?) {
+        guard succeeded else { return }
+        latchAfterManualCapture(reference: reference)
     }
 
     /// 会话级完整重置。

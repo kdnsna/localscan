@@ -149,9 +149,13 @@ final class StabilityDetectorTests: XCTestCase {
         XCTAssertFalse(gate.detector.isLatched)
     }
 
-    /// 重新打开自动拍摄后先锁存：手机不动不会立刻拍，出现不稳定后才重新计数。
+    /// 重新打开自动拍摄时若已有最近一帧框，则先锁存：手机不动不会立刻拍，出现不稳定后才重新计数。
     func testAutoCaptureGateEnableWaitsForInstability() {
-        var gate = AutoCaptureGate(isEnabled: false)
+        var gate = AutoCaptureGate()
+        for _ in 1...2 {
+            XCTAssertFalse(gate.feed(quad(), frameSize: frame))
+        }
+        gate.isEnabled = false
         gate.isEnabled = true
         for _ in 0..<30 {
             XCTAssertFalse(gate.feed(quad(), frameSize: frame))
@@ -161,6 +165,39 @@ final class StabilityDetectorTests: XCTestCase {
             XCTAssertFalse(gate.feed(quad(), frameSize: frame))
         }
         XCTAssertTrue(gate.feed(quad(), frameSize: frame))
+    }
+
+    private func fireCount(_ gate: inout AutoCaptureGate, frames: Int, offset: CGFloat = 0) -> Int {
+        var fires = 0
+        for _ in 0..<frames where gate.feed(quad(offset: offset), frameSize: frame) { fires += 1 }
+        return fires
+    }
+
+    /// 打开自动拍摄时没有任何框：不锁存，新页面稳定 N 帧后恰好触发一次。
+    func testEnableWithNoQuadThenNewPageFiresExactlyOnce() {
+        var gate = AutoCaptureGate(isEnabled: false)
+        gate.isEnabled = true
+        XCTAssertFalse(gate.detector.isLatched)
+        XCTAssertEqual(fireCount(&gate, frames: 30), 1)
+    }
+
+    /// 手动拍摄时没有任何框：不锁存，新页面稳定 N 帧后恰好触发一次。
+    func testManualCaptureWithNoQuadThenNewPageFiresExactlyOnce() {
+        var gate = AutoCaptureGate()
+        gate.handleManualCaptureResult(succeeded: true, reference: nil)
+        XCTAssertFalse(gate.detector.isLatched)
+        XCTAssertEqual(fireCount(&gate, frames: 30), 1)
+    }
+
+    /// 手动拍摄失败不锁存（控制器回调走的就是这个入口）。
+    func testFailedManualCaptureDoesNotLatch() {
+        var gate = AutoCaptureGate()
+        for _ in 1...2 {
+            XCTAssertFalse(gate.feed(quad(), frameSize: frame))
+        }
+        gate.handleManualCaptureResult(succeeded: false, reference: quad())
+        XCTAssertFalse(gate.detector.isLatched)
+        XCTAssertEqual(fireCount(&gate, frames: 30), 1)
     }
 
     func testAutoCaptureGateToggleOffThenOnStaysLatchedWhileStill() {
