@@ -40,7 +40,7 @@ final class CameraController: NSObject, ObservableObject {
     private var smoother = QuadSmoother()
     /// 仅在主线程访问（检测回调、开关和会话状态发布都在主线程）。
     private var autoCaptureGate = AutoCaptureGate()
-    /// 最近一帧原始检测框（仅主线程读写），手动拍摄后用作锁存基准。
+    /// 最近一帧原始检测框（预览帧像素坐标，仅主线程读写），手动拍摄后用作锁存基准。
     private var lastDetectedQuad: Quad?
     private var isConfigured = false
     private var isRequestingAuthorization = false
@@ -210,8 +210,9 @@ final class CameraController: NSObject, ObservableObject {
     func capturePhoto(completion: ((Data?) -> Void)? = nil) {
         requestCapture { [weak self] data in
             if let self {
-                self.autoCaptureGate.handleManualCaptureResult(succeeded: data != nil,
-                                                               reference: self.lastDetectedQuad)
+                self.autoCaptureGate.handleManualCaptureResult(
+                    succeeded: data != nil,
+                    reference: self.lastDetectedQuad)
             }
             completion?(data)
         }
@@ -262,10 +263,12 @@ final class CameraController: NSObject, ObservableObject {
     /// 主线程调用：平滑检测框用于叠加层，并把原始检测喂给稳定判定。
     private func handleDetection(_ quad: Quad?, dt: Double, frameSize: CGSize) {
         if detectedFrameSize != frameSize { detectedFrameSize = frameSize }
+        // 叠加层使用 Vision 的归一化坐标；稳定判定与拍摄快照统一用帧像素坐标。
         overlayQuad = smoother.update(quad, dt: dt)
-        lastDetectedQuad = quad
+        let pixelQuad = quad?.scaled(by: frameSize.width, frameSize.height)
+        lastDetectedQuad = pixelQuad
 
-        if autoCaptureGate.feed(quad, frameSize: frameSize) {
+        if autoCaptureGate.feed(pixelQuad, frameSize: frameSize) {
             // 触发后由 StabilityDetector 保持锁存，不能在这里 reset，否则会重复拍摄。
             requestCapture()
         }
@@ -306,9 +309,10 @@ final class CameraController: NSObject, ObservableObject {
 
     private func handleSessionInterruptionEnded() {
         DispatchQueue.main.async { [weak self] in
-            // 中断结束后同样锁存：手机没动时不重复拍同一页。
+            // 中断结束后同样锁存：手机没动时不重复拍同一页；没有基准框时解锁重新计数。
             guard let self else { return }
-            self.autoCaptureGate.latchAfterManualCapture(reference: self.lastDetectedQuad)
+            self.autoCaptureGate.handleInterruptionEnded(
+                lastDetectedQuad: self.lastDetectedQuad)
         }
         restartSessionAfterInterruption()
     }

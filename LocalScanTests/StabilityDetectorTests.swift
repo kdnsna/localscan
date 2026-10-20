@@ -256,4 +256,55 @@ final class StabilityDetectorTests: XCTestCase {
         XCTAssertEqual(StabilityDetector.Config(requiredFrames: 1).requiredFrames, 3)
         XCTAssertEqual(StabilityDetector.Config(requiredFrames: 9).requiredFrames, 5)
     }
+
+    /// 中断开始时 reset，结束时没有检测框：不能永远锁死，恢复后恰好第 N 个稳定帧触发一次。
+    func testInterruptionEndedWithoutQuadFiresOnceAtRequiredFrame() {
+        var gate = AutoCaptureGate()
+        XCTAssertEqual(fireCount(&gate, frames: 10), 1)
+        XCTAssertTrue(gate.detector.isLatched)
+
+        gate.reset()
+        gate.handleInterruptionEnded(lastDetectedQuad: nil)
+        XCTAssertFalse(gate.detector.isLatched)
+        XCTAssertEqual(gate.detector.stableFrameCount, 0)
+
+        let required = gate.detector.config.requiredFrames
+        var firedAt: Int?
+        for frameIndex in 1...30 {
+            if gate.feed(quad(), frameSize: frame) {
+                XCTAssertNil(firedAt, "锁存后不应重复触发")
+                firedAt = frameIndex
+            }
+        }
+        XCTAssertEqual(firedAt, required)
+        XCTAssertTrue(gate.detector.isLatched)
+    }
+
+    /// 中断结束时仍有基准框：同一页继续稳定不会触发；先不稳定才重新计数。
+    func testInterruptionEndedWithReferenceStaysLatchedUntilInstability() {
+        var gate = AutoCaptureGate()
+        XCTAssertFalse(gate.feed(quad(), frameSize: frame))
+
+        gate.reset()
+        gate.handleInterruptionEnded(lastDetectedQuad: quad())
+        XCTAssertTrue(gate.detector.isLatched)
+
+        for _ in 0..<30 {
+            XCTAssertFalse(gate.feed(quad(), frameSize: frame))
+        }
+        XCTAssertTrue(gate.detector.isLatched)
+
+        XCTAssertFalse(gate.feed(nil, frameSize: frame))
+        XCTAssertFalse(gate.detector.isLatched)
+
+        let required = gate.detector.config.requiredFrames
+        var firedAt: Int?
+        for frameIndex in 1...10 {
+            if gate.feed(quad(), frameSize: frame) {
+                firedAt = frameIndex
+                break
+            }
+        }
+        XCTAssertEqual(firedAt, required)
+    }
 }
