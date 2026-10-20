@@ -9,6 +9,9 @@ enum ScanDefaults {
     /// 导出 JPEG 质量范围与默认值。
     static let jpegQualityRange: ClosedRange<Double> = 0.80...0.88
     static let jpegQuality: Double = 0.85
+    /// 导出 PDF 的目标 DPI 范围与默认值。
+    static let pdfDPIRange: ClosedRange<CGFloat> = 200...300
+    static let pdfDPI: CGFloat = 200
     /// 倾斜提示阈值（度）。
     static let tiltWarningDegrees: Double = 18
 
