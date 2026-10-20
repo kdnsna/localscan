@@ -89,7 +89,7 @@ enum PDFAssembler {
     /// 临时 PDF 文件名形如 `Scan-001.pdf`。
     static func temporaryURL(index: Int = 1) -> URL {
         let name = String(format: "Scan-%03d.pdf", max(1, index))
-        return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        return ExportFileStore.url(named: name)
     }
 
     @discardableResult

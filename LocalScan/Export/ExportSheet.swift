@@ -47,9 +47,14 @@ private enum ExportWriter {
 /// 系统分享面板。包含“存储到‘文件’”；不发起任何网络请求。
 struct ShareSheet: UIViewControllerRepresentable {
     let items: [Any]
+    /// 分享结束（完成或取消）时调用一次。
+    var onComplete: () -> Void = {}
 
     func makeUIViewController(context: Context) -> UIActivityViewController {
-        UIActivityViewController(activityItems: items, applicationActivities: nil)
+        let controller = UIActivityViewController(activityItems: items,
+                                                  applicationActivities: nil)
+        controller.completionWithItemsHandler = { _, _, _, _ in onComplete() }
+        return controller
     }
 
     func updateUIViewController(_ controller: UIActivityViewController,
@@ -109,8 +114,8 @@ struct ExportSheet: View {
                     Button("取消") { dismiss() }
                 }
             }
-            .sheet(isPresented: $showShareSheet) {
-                ShareSheet(items: shareURLs)
+            .sheet(isPresented: $showShareSheet, onDismiss: cleanUpShared) {
+                ShareSheet(items: shareURLs, onComplete: cleanUpShared)
             }
         }
     }
@@ -131,6 +136,9 @@ struct ExportSheet: View {
 
         let kind = self.kind
         let imageFormat = self.imageFormat
+        // 新导出前清掉旧文件（同名文件也会被覆盖）。
+        cleanUpShared()
+        ExportFileStore.removeAll()
         isExporting = true
         errorMessage = nil
         Task {
@@ -146,5 +154,11 @@ struct ExportSheet: View {
                 errorMessage = "导出失败，请重试。"
             }
         }
+    }
+
+    /// 删除本次导出的临时文件；可重复调用。
+    private func cleanUpShared() {
+        ExportFileStore.remove(shareURLs)
+        shareURLs = []
     }
 }

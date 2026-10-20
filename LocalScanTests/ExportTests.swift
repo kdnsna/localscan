@@ -54,7 +54,7 @@ final class ImageExporterTests: XCTestCase {
 
         XCTAssertEqual(url.lastPathComponent, "Scan-003.jpg")
         XCTAssertEqual(url.deletingLastPathComponent().standardizedFileURL,
-                       FileManager.default.temporaryDirectory.standardizedFileURL)
+                       ExportFileStore.directory.standardizedFileURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     }
 }
@@ -88,5 +88,35 @@ final class PDFAssemblerTests: XCTestCase {
         let bounds = try XCTUnwrap(document.page(at: 0)?.bounds(for: .mediaBox))
         XCTAssertEqual(bounds.width, expected.width, accuracy: 0.5)
         XCTAssertEqual(bounds.height, expected.height, accuracy: 0.5)
+    }
+}
+
+final class ExportFileStoreTests: XCTestCase {
+    func testRemoveDeletesOnlyThisExportsFiles() throws {
+        let a = try ImageExporter.writeTemporaryFile(syntheticImage(), format: .jpeg, index: 7)
+        let b = try PDFAssembler.writeTemporaryFile(from: [syntheticImage()], index: 8)
+        let outside = FileManager.default.temporaryDirectory
+            .appendingPathComponent("not-an-export-\(UUID().uuidString).txt")
+        try Data("x".utf8).write(to: outside)
+        defer {
+            try? FileManager.default.removeItem(at: outside)
+            ExportFileStore.removeAll()
+        }
+
+        ExportFileStore.remove([a, outside])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: b.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outside.path))
+    }
+
+    func testRemoveAllClearsStaleExports() throws {
+        let a = try ImageExporter.writeTemporaryFile(syntheticImage(), format: .jpeg, index: 1)
+        let b = try PDFAssembler.writeTemporaryFile(from: [syntheticImage()], index: 2)
+        ExportFileStore.removeAll()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: a.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: b.path))
+        let left = try FileManager.default.contentsOfDirectory(
+            atPath: ExportFileStore.directory.path)
+        XCTAssertTrue(left.isEmpty)
     }
 }

@@ -81,7 +81,7 @@ enum ImageExporter {
     static func temporaryURL(for format: Format, index: Int = 1) -> URL {
         let number = max(1, index)
         let name = String(format: "Scan-%03d", number) + "." + format.fileExtension
-        return FileManager.default.temporaryDirectory.appendingPathComponent(name)
+        return ExportFileStore.url(named: name)
     }
 
     @discardableResult
