@@ -13,8 +13,9 @@ enum PerspectiveCorrectionError: Error, Equatable {
 
 /// 全分辨率透视拉正。只做几何重采样，不叠加任何增强滤镜。
 ///
-/// 入参 `quad` 是 **工作图** 像素坐标（左上原点，y 向下）；内部用
-/// `Quad.mapped` 映射回原图，再转成 Core Image 的左下原点坐标。
+/// **输入约定**：`image` 必须已经应用 EXIF 方向（upright）；本类不读取图像
+/// 元数据，也不做任何旋转。入参 `quad` 是 **工作图** 像素坐标（左上原点，
+/// y 向下）；内部用 `Quad.mapped` 映射回原图，再转成 Core Image 的左下原点坐标。
 final class PerspectiveCorrector {
     /// 复用 CIContext：CIContext 创建代价高，且本身是线程安全的。
     private let context: CIContext
@@ -47,14 +48,6 @@ final class PerspectiveCorrector {
         }
         let mapped = quad.mapped(from: workingSize, to: extent.size)
         return try render(image, quad: mapped)
-    }
-
-    func correct(image: CGImage, quad: Quad, workingSize: CGSize) throws -> CGImage {
-        try correct(image, quad: quad, workingSize: workingSize)
-    }
-
-    func correct(image: CIImage, quad: Quad, workingSize: CGSize) throws -> CGImage {
-        try correct(image, quad: quad, workingSize: workingSize)
     }
 
     /// 校验工作图坐标下的四边形。面积阈值按工作图像素面积取相对值，

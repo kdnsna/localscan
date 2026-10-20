@@ -79,4 +79,27 @@ enum TestImages {
         let dy = a.y - b.y
         return (dx * dx + dy * dy).squareRoot()
     }
+
+    /// RGBA8 像素字节，用于“像素完全一致”和确定性断言。
+    static func rgbaBytes(_ image: CGImage) -> [UInt8] {
+        let width = image.width
+        let height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        pixels.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(data: raw.baseAddress,
+                                          width: width,
+                                          height: height,
+                                          bitsPerComponent: 8,
+                                          bytesPerRow: width * 4,
+                                          space: colorSpace,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                return
+            }
+            context.draw(image, in: CGRect(x: 0, y: 0,
+                                           width: CGFloat(width),
+                                           height: CGFloat(height)))
+        }
+        return pixels
+    }
 }

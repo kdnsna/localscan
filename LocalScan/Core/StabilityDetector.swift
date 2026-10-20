@@ -165,6 +165,12 @@ struct AutoCaptureGate {
         latchAfterManualCapture(reference: reference)
     }
 
+    /// 会话中断结束：没有检测框时只清计数/解锁，避免恢复后永远锁死；
+    /// 有基准框时锁存到同页稳定被打破，防止恢复后重复拍同一页。
+    mutating func handleInterruptionEnded(lastDetectedQuad: Quad?) {
+        latchAfterManualCapture(reference: lastDetectedQuad)
+    }
+
     /// 会话级完整重置。
     mutating func reset() {
         detector.reset()

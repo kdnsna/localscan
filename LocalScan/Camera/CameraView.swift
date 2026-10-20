@@ -91,6 +91,8 @@ struct QuadOverlay: Shape {
 
 struct CameraView: View {
     @ObservedObject var controller: CameraController
+    /// 页面条出现时抬高底部控制区，避免遮住快门。
+    var bottomInset: CGFloat = 0
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
 
@@ -115,7 +117,8 @@ struct CameraView: View {
                 controls
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 16 + bottomInset)
 
             if let message = permissionMessage {
                 permissionOverlay(message)

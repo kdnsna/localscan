@@ -63,4 +63,65 @@ final class PerspectiveCorrectionTests: XCTestCase {
                                                   x: result.image.width / 2,
                                                   y: result.image.height / 2), 220)
     }
+
+    /// Core Image 使用左下原点；如果 y 方向映射错了，页面左上角的黑块会跑到左下角。
+    func testCoreImageYAxisKeepsTopLeftMarkerAtTopLeft() throws {
+        let output = try PerspectiveCorrector().correct(markedPageImage(),
+                                                        quad: quad,
+                                                        workingSize: size)
+        let width = output.width
+        let height = output.height
+
+        XCTAssertLessThan(TestImages.luminance(output, x: 40, y: 40), 60)
+        XCTAssertGreaterThan(TestImages.luminance(output, x: width - 40, y: 40), 200)
+        XCTAssertGreaterThan(TestImages.luminance(output, x: 40, y: height - 40), 200)
+        XCTAssertGreaterThan(TestImages.luminance(output,
+                                                  x: width - 40,
+                                                  y: height - 40), 200)
+    }
+
+    /// 黑色背景上画白色页面，再在页面左上角附近画一个黑色小方块。
+    private func markedPageImage(markerSide: CGFloat = 80) -> CGImage {
+        let width = Int(size.width.rounded())
+        let height = Int(size.height.rounded())
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            fatalError("无法创建测试用位图上下文")
+        }
+
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0,
+                            width: CGFloat(width), height: CGFloat(height)))
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        let path = CGMutablePath()
+        path.move(to: quad.topLeft)
+        path.addLine(to: quad.topRight)
+        path.addLine(to: quad.bottomRight)
+        path.addLine(to: quad.bottomLeft)
+        path.closeSubpath()
+        context.addPath(path)
+        context.fillPath()
+
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: quad.topLeft.x + 20,
+                            y: quad.topLeft.y + 20,
+                            width: markerSide,
+                            height: markerSide))
+        context.restoreGState()
+
+        guard let image = context.makeImage() else {
+            fatalError("无法生成测试图像")
+        }
+        return image
+    }
 }
