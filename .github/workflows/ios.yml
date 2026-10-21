@@ -17,6 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: No-network check
+        run: |
+          scripts/check_no_network.sh
+          scripts/tests/test_check_no_network.sh
+
+      - name: Eval script tests
+        run: python3 -m unittest discover -s eval/tests
+
       - name: Show Xcode
         run: xcodebuild -version
 
