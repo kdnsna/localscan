@@ -204,13 +204,12 @@ final class GridDewarper: Dewarping {
         }
 
         let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
-        guard let image = CIImage(bitmapData: data,
-                                  bytesPerRow: width * MemoryLayout<Float>.size * 4,
-                                  size: CGSize(width: width, height: height),
-                                  format: .RGBAf,
-                                  colorSpace: nil) else {
-            return nil
-        }
+        // CIImage(bitmapData:...) is non-optional on current SDK; do not guard-let it.
+        let image = CIImage(bitmapData: data,
+                            bytesPerRow: width * MemoryLayout<Float>.size * 4,
+                            size: CGSize(width: width, height: height),
+                            format: .RGBAf,
+                            colorSpace: nil)
         return DisplacementMap(image: image, data: data, width: width, height: height,
                                vectorScale: vectorScale)
     }
@@ -237,3 +236,4 @@ struct DewarpChain: Dewarping {
         return nil
     }
 }
+
