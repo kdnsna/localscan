@@ -35,6 +35,16 @@ final class DocumentQuadDetectorTests: XCTestCase {
             fromVisionPoints: visionPoints(for: pixelQuad), imageSize: .zero))
     }
 
+    func testQuadSmallerThanOnePercentIsRejected() {
+        // 0.09 × 0.09 = 0.81% 画面面积，低于 1% 阈值。
+        let small = Quad(topLeft: CGPoint(x: 0.40, y: 0.40),
+                         topRight: CGPoint(x: 0.49, y: 0.40),
+                         bottomRight: CGPoint(x: 0.49, y: 0.49),
+                         bottomLeft: CGPoint(x: 0.40, y: 0.49))
+        XCTAssertNil(DocumentQuadDetector.pixelQuad(
+            fromVisionPoints: visionPoints(for: small), imageSize: size))
+    }
+
     func testScaledQuadPassesProcessingQueue() async throws {
         let image = TestImages.page(size: size, quad: pixelQuad)
         let quad = try XCTUnwrap(DocumentQuadDetector.pixelQuad(

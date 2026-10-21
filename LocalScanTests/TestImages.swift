@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 @testable import LocalScan
 
 /// 测试用内存图像工具：只画在 CGContext 里，不读写任何文件。
@@ -136,5 +137,117 @@ enum TestImages {
                                            height: CGFloat(height)))
         }
         return pixels
+    }
+
+    /// 白底黑线的规则网格。`amplitude` > 0 时水平/竖直网格线按正弦弯曲，
+    /// 用来构造可重复的「弯曲书页」测试图；0 表示平直网格。
+    static func gridPage(size: CGSize,
+                         columns: Int = 6,
+                         rows: Int = 5,
+                         lineWidth: CGFloat = 2,
+                         amplitude: CGFloat = 0) -> CGImage {
+        let width = Int(size.width.rounded())
+        let height = Int(size.height.rounded())
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            fatalError("无法创建测试用位图上下文")
+        }
+
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0,
+                            width: CGFloat(width), height: CGFloat(height)))
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        context.setStrokeColor(CGColor(gray: 0, alpha: 1))
+        context.setLineWidth(lineWidth)
+        context.setLineCap(.round)
+
+        let usableWidth = max(1, CGFloat(width) - 2 * lineWidth)
+        let usableHeight = max(1, CGFloat(height) - 2 * lineWidth)
+        let maxAmplitude = min(amplitude, min(usableWidth, usableHeight) * 0.12)
+
+        for row in 0..<max(1, rows) {
+            let fraction = rows <= 1 ? 0.5 : CGFloat(row) / CGFloat(rows - 1)
+            let baseY = lineWidth + fraction * usableHeight
+            let path = CGMutablePath()
+            for x in stride(from: CGFloat(lineWidth), through: CGFloat(width) - lineWidth,
+                            by: 2) {
+                let unit = (x - lineWidth) / usableWidth
+                let y = baseY + maxAmplitude * CGFloat(sin(Double.pi * Double(unit)))
+                if x == lineWidth {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            context.addPath(path)
+            context.strokePath()
+        }
+
+        for column in 0..<max(1, columns) {
+            let fraction = columns <= 1 ? 0.5 : CGFloat(column) / CGFloat(columns - 1)
+            let baseX = lineWidth + fraction * usableWidth
+            let path = CGMutablePath()
+            for y in stride(from: CGFloat(lineWidth), through: CGFloat(height) - lineWidth,
+                            by: 2) {
+                let unit = (y - lineWidth) / usableHeight
+                let x = baseX + maxAmplitude * CGFloat(sin(Double.pi * Double(unit)))
+                if y == lineWidth {
+                    path.move(to: CGPoint(x: x, y: y))
+                } else {
+                    path.addLine(to: CGPoint(x: x, y: y))
+                }
+            }
+            context.addPath(path)
+            context.strokePath()
+        }
+
+        context.restoreGState()
+        guard let image = context.makeImage() else {
+            fatalError("无法生成测试网格图像")
+        }
+        return image
+    }
+
+    /// 白底 + 居中的黑色方块，用于验证网格展平把标记移到预期位置。
+    static func markerPage(size: CGSize,
+                           center: CGPoint,
+                           markerSide: CGFloat = 40) -> CGImage {
+        let width = Int(size.width.rounded())
+        let height = Int(size.height.rounded())
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            fatalError("无法创建测试用位图上下文")
+        }
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0,
+                            width: CGFloat(width), height: CGFloat(height)))
+        context.saveGState()
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: center.x - markerSide / 2,
+                            y: center.y - markerSide / 2,
+                            width: markerSide,
+                            height: markerSide))
+        context.restoreGState()
+
+        guard let image = context.makeImage() else {
+            fatalError("无法生成测试标记图像")
+        }
+        return image
     }
 }
