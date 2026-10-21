@@ -4,6 +4,8 @@ import Foundation
 enum PageFilter: String, CaseIterable, Identifiable {
     /// 保真：只做几何，不改变任何像素。
     case original
+    /// 经典增强：光照归一化 + 温和对比度 + 轻锐化（确定性，不生成内容）。
+    case enhance
     case grayscale
     /// 灰度 + 固定阈值。
     case blackWhite
@@ -13,6 +15,7 @@ enum PageFilter: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .original: return "原图"
+        case .enhance: return "增强"
         case .grayscale: return "灰度"
         case .blackWhite: return "黑白"
         }
