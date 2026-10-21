@@ -51,10 +51,10 @@ struct DewarpGrid: Equatable {
 /// 确定性网格 / TPS 展平。
 ///
 /// 先用控制网格拟合一个「输出坐标 -> 源坐标」的 TPS，再把 TPS 采样成一张低分辨率
-/// 位移图，最后用 Core Image 的 `CIWarpKernel` 做全分辨率重采样。TPS 求解和位移图
+/// 位移图，最后用 Core Image 的颜色 kernel（采样位移图）做全分辨率重采样。TPS 求解和位移图
 /// 生成是纯 CPU、固定顺序的；重采样交给 Core Image（后续可以替换成 Metal kernel）。
 ///
-/// 位移图的采样只在 `dewarp` 第一次被调用时创建 kernel，平纸路径不会编译 kernel。
+/// 位移图的采样只在 `dewarp` 第一次被调用时创建颜色 kernel，平纸路径不会编译 kernel。
 final class GridDewarper: Dewarping {
     let grid: DewarpGrid
     private let providedContext: CIContext?
@@ -66,8 +66,12 @@ final class GridDewarper: Dewarping {
     /// 位移图长边上限。TPS 是低频形变，129×129 的位移图足够，且避免每个像素都算 TPS。
     private static let displacementMapMaxDimension = 129
 
+    // Newer CI/Metal rejects CIWarpKernel sources that take a sampler and return vec2
+    // ("kernels with samplers must return type vec4 or half4"). Use a color kernel that
+    // samples both the page and the displacement map instead.
     private static let kernelSource = """
-    kernel vec2 localScanDewarp(sampler displacement,
+    kernel vec4 localScanDewarp(sampler image,
+                                sampler displacement,
                                 float imageWidth,
                                 float imageHeight,
                                 float mapWidth,
@@ -77,13 +81,14 @@ final class GridDewarper: Dewarping {
         vec2 unit = clamp(dest / vec2(imageWidth, imageHeight),
                           vec2(0.0, 0.0), vec2(1.0, 1.0));
         vec2 mapCoord = unit * vec2(mapWidth - 1.0, mapHeight - 1.0);
-        vec2 offset = (sample(displacement, mapCoord).xy - vec2(0.5, 0.5))
-            * offsetScale;
-        return dest + offset;
+        vec2 offset = (sample(displacement, samplerTransform(displacement, mapCoord)).xy
+                       - vec2(0.5, 0.5)) * offsetScale;
+        vec2 src = dest + offset;
+        return sample(image, samplerTransform(image, src));
     }
     """
 
-    private lazy var kernel: CIWarpKernel? = CIWarpKernel(source: GridDewarper.kernelSource)
+    private lazy var kernel: CIColorKernel? = CIColorKernel(source: GridDewarper.kernelSource)
 
     var isAvailable: Bool { grid.isValid }
 
@@ -110,6 +115,7 @@ final class GridDewarper: Dewarping {
                             width: imageSize.width, height: imageSize.height)
         let input = CIImage(cgImage: image)
         let arguments: [Any] = [
+            input,
             displacement.image,
             NSNumber(value: Double(imageSize.width)),
             NSNumber(value: Double(imageSize.height)),
@@ -117,10 +123,7 @@ final class GridDewarper: Dewarping {
             NSNumber(value: Double(displacement.height)),
             NSNumber(value: Double(displacement.vectorScale)),
         ]
-        guard let output = kernel.apply(extent: extent,
-                                        roiCallback: { _, _ in extent },
-                                        image: input,
-                                        arguments: arguments) else {
+        guard let output = kernel.apply(extent: extent, arguments: arguments) else {
             return nil
         }
         let rendered = output.cropped(to: extent)
@@ -236,4 +239,5 @@ struct DewarpChain: Dewarping {
         return nil
     }
 }
+
 
