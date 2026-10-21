@@ -46,6 +46,41 @@ enum TestImages {
         return image
     }
 
+    /// 左暗右亮的照明渐变，中间叠一块中灰「文档」矩形。用于验证增强不是空操作。
+    static func lightingGradient(size: CGSize) -> CGImage {
+        let width = Int(size.width.rounded())
+        let height = Int(size.height.rounded())
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: nil,
+                                      width: width,
+                                      height: height,
+                                      bitsPerComponent: 8,
+                                      bytesPerRow: 0,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            fatalError("无法创建测试用位图上下文")
+        }
+
+        for x in 0..<width {
+            let t = CGFloat(x) / CGFloat(max(1, width - 1))
+            let level = 0.12 + (0.95 - 0.12) * t
+            context.setFillColor(CGColor(gray: level, alpha: 1))
+            context.fill(CGRect(x: CGFloat(x), y: 0,
+                                width: 1, height: CGFloat(height)))
+        }
+
+        context.setFillColor(CGColor(gray: 0.5, alpha: 1))
+        context.fill(CGRect(x: CGFloat(width) * 0.2,
+                            y: CGFloat(height) * 0.2,
+                            width: CGFloat(width) * 0.6,
+                            height: CGFloat(height) * 0.6))
+
+        guard let image = context.makeImage() else {
+            fatalError("无法生成测试图像")
+        }
+        return image
+    }
+
     /// 读取图像某点的亮度（0...255，行 0 为图像顶部）。
     static func luminance(_ image: CGImage, x: Int, y: Int) -> Int {
         let width = image.width

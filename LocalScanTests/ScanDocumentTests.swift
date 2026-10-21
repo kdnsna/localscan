@@ -97,7 +97,7 @@ final class ScanDocumentTests: XCTestCase {
         XCTAssertEqual(document.pages.map(\.filter), [.original, .blackWhite])
 
         XCTAssertEqual(PageFilter.allCases,
-                       [.original, .grayscale, .blackWhite])
+                       [.original, .enhance, .grayscale, .blackWhite])
     }
 
     func testMovePageBeforeTargetForStripDrag() {
