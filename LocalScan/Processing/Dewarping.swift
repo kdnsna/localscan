@@ -56,11 +56,14 @@ struct DewarpGrid: Equatable {
 ///
 final class GridDewarper: Dewarping {
     let grid: DewarpGrid
-    private let providedContext: CIContext?
-    /// 只在真正需要展平时创建 CIContext，平纸路径不付这份初始化成本。
-    private lazy var renderContext: CIContext = {
-        self.providedContext ?? CIContext()
-    }()
+
+    var isAvailable: Bool { grid.isValid }
+
+    init(grid: DewarpGrid, context: CIContext? = nil) {
+        self.grid = grid
+        // context 保留参数以兼容旧调用；CPU 路径不再使用 CIContext。
+        _ = context
+    }
 
     func dewarp(_ image: CGImage) -> CGImage? {
         guard grid.isValid, image.width > 1, image.height > 1 else { return nil }
