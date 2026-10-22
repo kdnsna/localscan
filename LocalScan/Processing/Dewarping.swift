@@ -51,10 +51,9 @@ struct DewarpGrid: Equatable {
 /// 确定性网格 / TPS 展平。
 ///
 /// 先用控制网格拟合一个「输出坐标 -> 源坐标」的 TPS，再把 TPS 采样成一张低分辨率
-/// 位移图，最后用 Core Image 的颜色 kernel（采样位移图）做全分辨率重采样。TPS 求解和位移图
-/// 生成是纯 CPU、固定顺序的；重采样交给 Core Image（后续可以替换成 Metal kernel）。
+/// 位移图，全分辨率重采样目前走确定性 CPU 双线性（模拟器上带 sampler 的 CI kernel 会编不过）。
+/// TPS 求解是纯 CPU、固定顺序的；后续可再换成 Metal / CI kernel。
 ///
-/// 位移图的采样只在 `dewarp` 第一次被调用时创建颜色 kernel，平纸路径不会编译 kernel。
 final class GridDewarper: Dewarping {
     let grid: DewarpGrid
     private let providedContext: CIContext?
@@ -63,76 +62,126 @@ final class GridDewarper: Dewarping {
         self.providedContext ?? CIContext()
     }()
 
-    /// 位移图长边上限。TPS 是低频形变，129×129 的位移图足够，且避免每个像素都算 TPS。
-    private static let displacementMapMaxDimension = 129
-
-    // Newer CI/Metal rejects CIWarpKernel sources that take a sampler and return vec2
-    // ("kernels with samplers must return type vec4 or half4"). Use a color kernel that
-    // samples both the page and the displacement map instead.
-    private static let kernelSource = """
-    kernel vec4 localScanDewarp(sampler image,
-                                sampler displacement,
-                                float imageWidth,
-                                float imageHeight,
-                                float mapWidth,
-                                float mapHeight,
-                                float offsetScale) {
-        vec2 dest = destCoord();
-        vec2 unit = clamp(dest / vec2(imageWidth, imageHeight),
-                          vec2(0.0, 0.0), vec2(1.0, 1.0));
-        vec2 mapCoord = unit * vec2(mapWidth - 1.0, mapHeight - 1.0);
-        vec2 offset = (sample(displacement, samplerTransform(displacement, mapCoord)).xy
-                       - vec2(0.5, 0.5)) * offsetScale;
-        vec2 src = dest + offset;
-        return sample(image, samplerTransform(image, src));
-    }
-    """
-
-    private lazy var kernel: CIColorKernel? = CIColorKernel(source: GridDewarper.kernelSource)
-
-    var isAvailable: Bool { grid.isValid }
-
-    init(grid: DewarpGrid, context: CIContext? = nil) {
-        self.grid = grid
-        self.providedContext = context
-    }
-
     func dewarp(_ image: CGImage) -> CGImage? {
         guard grid.isValid, image.width > 1, image.height > 1 else { return nil }
-        // 恒等网格不需要任何重采样；同时避免默认回退路径在书页上做无意义的工作。
+        // 恒等网格不需要任何重采样。
         if grid.offsets.allSatisfy({ $0.dx == 0 && $0.dy == 0 }) {
             return image
         }
         let imageSize = CGSize(width: CGFloat(image.width),
                                height: CGFloat(image.height))
-        guard let spline = makeSpline(imageSize: imageSize),
-              let displacement = makeDisplacementMap(spline: spline, imageSize: imageSize),
-              let kernel = kernel else {
-            return nil
+        guard let spline = makeSpline(imageSize: imageSize) else { return nil }
+        return Self.resampleCPU(image, spline: spline)
+    }
+
+    /// CPU 双线性重采样。当前 SDK 上带 sampler 的 `CIWarpKernel`/`CIColorKernel` 都会在模拟器里编译失败，
+    /// M2-2 骨架先用确定性 CPU 路径保证行为与单测；后续可再换成 Metal。
+    private static func resampleCPU(_ image: CGImage, spline: ThinPlateSpline) -> CGImage? {
+        let width = image.width
+        let height = image.height
+        guard width > 1, height > 1 else { return nil }
+
+        let srcBytes = rgbaBytes(image)
+        var dstBytes = [UInt8](repeating: 255, count: width * height * 4)
+
+        for visualY in 0..<height {
+            for visualX in 0..<width {
+                // makeSpline / TPS 使用 Core Image 左下原点。
+                let destCI = CGPoint(x: CGFloat(visualX) + 0.5,
+                                     y: CGFloat(height - 1 - visualY) + 0.5)
+                let sourceCI = spline.map(destCI)
+                let srcVisualX = sourceCI.x - 0.5
+                let srcVisualY = CGFloat(height) - sourceCI.y - 0.5
+                let rgba = bilinearSample(srcBytes, width: width, height: height,
+                                          x: srcVisualX, y: srcVisualY)
+                let index = (visualY * width + visualX) * 4
+                dstBytes[index] = rgba.0
+                dstBytes[index + 1] = rgba.1
+                dstBytes[index + 2] = rgba.2
+                dstBytes[index + 3] = rgba.3
+            }
         }
 
-        let extent = CGRect(x: 0, y: 0,
-                            width: imageSize.width, height: imageSize.height)
-        let input = CIImage(cgImage: image)
-        let arguments: [Any] = [
-            input,
-            displacement.image,
-            NSNumber(value: Double(imageSize.width)),
-            NSNumber(value: Double(imageSize.height)),
-            NSNumber(value: Double(displacement.width)),
-            NSNumber(value: Double(displacement.height)),
-            NSNumber(value: Double(displacement.vectorScale)),
-        ]
-        guard let output = kernel.apply(extent: extent, arguments: arguments) else {
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let data = dstBytes.withUnsafeBufferPointer { Data(buffer: $0) }
+        guard let provider = CGDataProvider(data: data as CFData),
+              let result = CGImage(width: width,
+                                   height: height,
+                                   bitsPerComponent: 8,
+                                   bitsPerPixel: 32,
+                                   bytesPerRow: width * 4,
+                                   space: colorSpace,
+                                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue),
+                                   provider: provider,
+                                   decode: nil,
+                                   shouldInterpolate: false,
+                                   intent: .defaultIntent) else {
             return nil
         }
-        let rendered = output.cropped(to: extent)
-        guard let result = renderContext.createCGImage(rendered, from: extent) else {
-            return nil
-        }
-        // 位移图数据必须活到 createCGImage 完成；这里显式引用一次，避免被提前释放。
-        _ = displacement.data
         return result
+    }
+
+    private static func rgbaBytes(_ image: CGImage) -> [UInt8] {
+        let width = image.width
+        let height = image.height
+        var pixels = [UInt8](repeating: 0, count: width * height * 4)
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        pixels.withUnsafeMutableBytes { raw in
+            guard let context = CGContext(data: raw.baseAddress,
+                                          width: width,
+                                          height: height,
+                                          bitsPerComponent: 8,
+                                          bytesPerRow: width * 4,
+                                          space: colorSpace,
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+                return
+            }
+            context.draw(image, in: CGRect(x: 0, y: 0,
+                                           width: CGFloat(width), height: CGFloat(height)))
+        }
+        return pixels
+    }
+
+    private static func bilinearSample(_ bytes: [UInt8],
+                                       width: Int,
+                                       height: Int,
+                                       x: CGFloat,
+                                       y: CGFloat) -> (UInt8, UInt8, UInt8, UInt8) {
+        if x.isNaN || y.isNaN || !x.isFinite || !y.isFinite {
+            return (255, 255, 255, 255)
+        }
+        let maxX = CGFloat(width - 1)
+        let maxY = CGFloat(height - 1)
+        let clampedX = min(max(x, 0), maxX)
+        let clampedY = min(max(y, 0), maxY)
+        let x0 = Int(clampedX.rounded(.down))
+        let y0 = Int(clampedY.rounded(.down))
+        let x1 = min(x0 + 1, width - 1)
+        let y1 = min(y0 + 1, height - 1)
+        let tx = clampedX - CGFloat(x0)
+        let ty = clampedY - CGFloat(y0)
+
+        func pixel(_ px: Int, _ py: Int) -> (CGFloat, CGFloat, CGFloat, CGFloat) {
+            let index = (py * width + px) * 4
+            return (CGFloat(bytes[index]), CGFloat(bytes[index + 1]),
+                    CGFloat(bytes[index + 2]), CGFloat(bytes[index + 3]))
+        }
+
+        let p00 = pixel(x0, y0)
+        let p10 = pixel(x1, y0)
+        let p01 = pixel(x0, y1)
+        let p11 = pixel(x1, y1)
+
+        func mix(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat { a * (1 - t) + b * t }
+
+        let r = mix(mix(p00.0, p10.0, tx), mix(p01.0, p11.0, tx), ty)
+        let g = mix(mix(p00.1, p10.1, tx), mix(p01.1, p11.1, tx), ty)
+        let b = mix(mix(p00.2, p10.2, tx), mix(p01.2, p11.2, tx), ty)
+        let a = mix(mix(p00.3, p10.3, tx), mix(p01.3, p11.3, tx), ty)
+        return (UInt8(clamping: Int(r.rounded())),
+                UInt8(clamping: Int(g.rounded())),
+                UInt8(clamping: Int(b.rounded())),
+                UInt8(clamping: Int(a.rounded())))
     }
 
     // MARK: - TPS 与位移图
@@ -166,56 +215,6 @@ final class GridDewarper: Dewarping {
         }
         return ThinPlateSpline(controlPoints: destinations, values: sources)
     }
-
-    private struct DisplacementMap {
-        let image: CIImage
-        let data: Data
-        let width: Int
-        let height: Int
-        /// 位移编码尺度：存储值 = offset / vectorScale + 0.5，保证落在 [0,1]。
-        let vectorScale: CGFloat
-    }
-
-    private func makeDisplacementMap(spline: ThinPlateSpline,
-                                     imageSize: CGSize) -> DisplacementMap? {
-        let width = min(Self.displacementMapMaxDimension,
-                        max(2, Int(imageSize.width.rounded())))
-        let height = min(Self.displacementMapMaxDimension,
-                         max(2, Int(imageSize.height.rounded())))
-        guard width >= 2, height >= 2 else { return nil }
-
-        // 支持 ±1 个画面长边的位移；正常书页弯曲远小于这个范围。
-        let vectorScale = max(imageSize.width, imageSize.height) * 2
-        guard vectorScale.isFinite, vectorScale > 0 else { return nil }
-
-        // RGBAf：R/G 存编码后的源坐标偏移，B 恒 0，A 恒 1。
-        var pixels = [Float](repeating: 0, count: width * height * 4)
-        for row in 0..<height {
-            // 数据行 0 是画面顶部；CI 的 y=0 在画面底部。
-            let unitY = 1 - (CGFloat(row) + 0.5) / CGFloat(height)
-            for column in 0..<width {
-                let unitX = (CGFloat(column) + 0.5) / CGFloat(width)
-                let destination = CGPoint(x: unitX * imageSize.width,
-                                          y: unitY * imageSize.height)
-                let source = spline.map(destination)
-                let index = (row * width + column) * 4
-                pixels[index] = Float((source.x - destination.x) / vectorScale + 0.5)
-                pixels[index + 1] = Float((source.y - destination.y) / vectorScale + 0.5)
-                pixels[index + 2] = 0
-                pixels[index + 3] = 1
-            }
-        }
-
-        let data = pixels.withUnsafeBufferPointer { Data(buffer: $0) }
-        // CIImage(bitmapData:...) is non-optional on current SDK; do not guard-let it.
-        let image = CIImage(bitmapData: data,
-                            bytesPerRow: width * MemoryLayout<Float>.size * 4,
-                            size: CGSize(width: width, height: height),
-                            format: .RGBAf,
-                            colorSpace: nil)
-        return DisplacementMap(image: image, data: data, width: width, height: height,
-                               vectorScale: vectorScale)
-    }
 }
 
 /// 展平级联：优先用可用的实现（例如 UVDoc），失败时退回确定性网格展平。
@@ -239,5 +238,6 @@ struct DewarpChain: Dewarping {
         return nil
     }
 }
+
 
 
