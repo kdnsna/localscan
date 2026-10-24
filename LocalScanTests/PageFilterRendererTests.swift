@@ -54,4 +54,37 @@ final class PageFilterRendererTests: XCTestCase {
                            "同一输入两次输出必须逐字节一致")
         }
     }
+
+    func testBlackWhiteNormalizesShadowAndProducesOnlyBlackAndWhite() throws {
+        let input = shadowedPage()
+        let output = try XCTUnwrap(PageFilterRenderer.shared.apply(.blackWhite, to: input))
+
+        XCTAssertGreaterThan(TestImages.luminance(output, x: 40, y: 30), 240)
+        XCTAssertGreaterThan(TestImages.luminance(output, x: 200, y: 30), 240)
+        XCTAssertLessThan(TestImages.luminance(output, x: 60, y: 80), 10)
+        XCTAssertLessThan(TestImages.luminance(output, x: 180, y: 80), 10)
+
+        let bytes = TestImages.rgbaBytes(output)
+        for index in stride(from: 0, to: bytes.count, by: 4) {
+            XCTAssertEqual(bytes[index], bytes[index + 1])
+            XCTAssertEqual(bytes[index], bytes[index + 2])
+            XCTAssertTrue(bytes[index] == 0 || bytes[index] == 255)
+        }
+    }
+
+    private func shadowedPage() -> CGImage {
+        let size = CGSize(width: 240, height: 160)
+        let context = CGContext(data: nil, width: Int(size.width), height: Int(size.height),
+                                bitsPerComponent: 8, bytesPerRow: 0,
+                                space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        context.setFillColor(CGColor(gray: 0.28, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 120, height: size.height))
+        context.setFillColor(CGColor(gray: 0.8, alpha: 1))
+        context.fill(CGRect(x: 120, y: 0, width: 120, height: size.height))
+        context.setFillColor(CGColor(gray: 0, alpha: 1))
+        context.fill(CGRect(x: 50, y: 70, width: 20, height: 20))
+        context.fill(CGRect(x: 170, y: 70, width: 20, height: 20))
+        return context.makeImage()!
+    }
 }

@@ -8,6 +8,7 @@ enum PerspectiveCorrectionError: Error, Equatable {
     /// 四边形非有限、非凸或面积过小。
     case invalidQuad
     case filterUnavailable
+    case outputTooLarge
     case renderFailed
 }
 
@@ -19,9 +20,13 @@ enum PerspectiveCorrectionError: Error, Equatable {
 final class PerspectiveCorrector {
     /// 复用 CIContext：CIContext 创建代价高，且本身是线程安全的。
     private let context: CIContext
+    private let maximumOutputPixelCount: Int
+    private let maximumOutputDimension = 8192
 
-    init(context: CIContext = CIContext()) {
+    init(context: CIContext = CIContext(),
+         maximumOutputPixelCount: Int = 20_000_000) {
         self.context = context
+        self.maximumOutputPixelCount = max(1, maximumOutputPixelCount)
     }
 
     func correct(_ image: CGImage,
@@ -93,8 +98,15 @@ final class PerspectiveCorrector {
         }
         let outputExtent = output.extent
         guard outputExtent.width.isFinite, outputExtent.height.isFinite,
-              outputExtent.width > 0, outputExtent.height > 0,
-              let cgImage = context.createCGImage(output, from: outputExtent) else {
+              outputExtent.width > 0, outputExtent.height > 0 else {
+            throw PerspectiveCorrectionError.renderFailed
+        }
+        guard outputExtent.width <= CGFloat(maximumOutputDimension),
+              outputExtent.height <= CGFloat(maximumOutputDimension),
+              outputExtent.width * outputExtent.height <= CGFloat(maximumOutputPixelCount) else {
+            throw PerspectiveCorrectionError.outputTooLarge
+        }
+        guard let cgImage = context.createCGImage(output, from: outputExtent) else {
             throw PerspectiveCorrectionError.renderFailed
         }
         return cgImage

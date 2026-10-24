@@ -86,6 +86,64 @@ enum PDFAssembler {
         return data
     }
 
+    /// 逐页写入临时 PDF，避免同时持有全部页面位图和完整 PDF Data。
+    static func writeTemporaryFile(pageCount: Int,
+                                   pageAt: (Int) throws -> CGImage,
+                                   dpi: CGFloat = defaultDPI,
+                                   quality: Double = ScanDefaults.jpegQuality,
+                                   index: Int = 1) throws -> URL {
+        guard pageCount > 0 else { throw PDFAssemblerError.noPages }
+        let url = temporaryURL(index: index)
+        let quality = ImageExporter.clampedQuality(quality)
+        let format = UIGraphicsPDFRendererFormat()
+        format.documentInfo = [
+            kCGPDFContextTitle as String: "LocalScan",
+            kCGPDFContextCreator as String: "LocalScan",
+        ]
+        let renderer = UIGraphicsPDFRenderer(bounds: .zero, format: format)
+        var pageError: Error?
+
+        os_signpost(.begin, log: log, name: "PDFExport")
+        defer { os_signpost(.end, log: log, name: "PDFExport") }
+        do {
+            try renderer.writePDF(to: url) { context in
+                for pageIndex in 0..<pageCount {
+                    autoreleasepool {
+                        do {
+                            let image = try pageAt(pageIndex)
+                            let size = pageSize(forPixelSize: CGSize(width: image.width,
+                                                                     height: image.height),
+                                                dpi: dpi)
+                            guard size.width > 0, size.height > 0 else {
+                                throw PDFAssemblerError.invalidPageSize
+                            }
+                            let jpeg = try ImageExporter.encode(image, as: .jpeg,
+                                                                quality: quality)
+                            guard let pageImage = UIImage(data: jpeg) else {
+                                throw PDFAssemblerError.imageDecodingFailed
+                            }
+                            let bounds = CGRect(origin: .zero, size: size)
+                            context.beginPage(withBounds: bounds, pageInfo: [:])
+                            pageImage.draw(in: bounds)
+                        } catch {
+                            pageError = error
+                            return
+                        }
+                    }
+                    if pageError != nil { return }
+                }
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: url)
+            throw PDFAssemblerError.writeFailed
+        }
+        if let pageError {
+            try? FileManager.default.removeItem(at: url)
+            throw pageError
+        }
+        return url
+    }
+
     /// 临时 PDF 文件名形如 `Scan-001.pdf`。
     static func temporaryURL(index: Int = 1) -> URL {
         let name = String(format: "Scan-%03d.pdf", max(1, index))

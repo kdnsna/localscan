@@ -50,11 +50,15 @@ final class DocumentDetector {
                                                     options: [:])
                 try handler.perform([request])
                 if let observation = request.results?.first {
-                    detected = DocumentDetectorGeometry.quad(
+                    let quad = DocumentDetectorGeometry.quad(
                         fromVisionPoints: [observation.topLeft,
                                            observation.topRight,
                                            observation.bottomRight,
                                            observation.bottomLeft])
+                    if DocumentQuadDetector.isValid(quad,
+                                                    imageSize: CGSize(width: 1, height: 1)) {
+                        detected = quad
+                    }
                 }
             } catch {
                 detected = nil

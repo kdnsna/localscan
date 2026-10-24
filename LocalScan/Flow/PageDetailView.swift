@@ -33,9 +33,12 @@ struct PageStrip: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 LazyHStack(spacing: 10) {
-                    ForEach(session.document.pages) { page in
+                    ForEach(Array(session.document.pages.enumerated()), id: \.element.id) { index, page in
                         Button { onSelect(page.id) } label: { thumbnail(page) }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("第 \(index + 1) 页，共 \(session.pageCount) 页")
+                            .accessibilityValue(accessibilityState(for: page.state))
+                            .accessibilityHint("轻点两下编辑页面，可拖拽或使用详情中的排序按钮")
                             .draggable(page.id.uuidString)
                             .dropDestination(for: String.self) { items, _ in
                                 guard let raw = items.first,
@@ -55,6 +58,14 @@ struct PageStrip: View {
         .background(.black.opacity(0.55))
         .sheet(isPresented: $showExport) {
             ExportSheet(session: session)
+        }
+    }
+
+    private func accessibilityState(for state: PageState) -> String {
+        switch state {
+        case .processing: return "处理中"
+        case .done: return "已完成"
+        case .failed: return "处理失败"
         }
     }
 
@@ -94,6 +105,7 @@ struct PageDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var showEditor = false
+    @State private var showDeleteConfirmation = false
 
     var body: some View {
         NavigationStack {
@@ -109,18 +121,9 @@ struct PageDetailView: View {
                         }
                         .pickerStyle(.segmented)
 
-                        HStack(spacing: 12) {
-                            Button("重新裁剪") { showEditor = true }
-                                .disabled(page.state == .processing)
-                            Button("重拍") {
-                                session.beginRetake(pageID: pageID)
-                                dismiss()
-                            }
-                            .disabled(page.state == .processing)
-                            Button("删除", role: .destructive) {
-                                session.delete(id: pageID)
-                                dismiss()
-                            }
+                        ViewThatFits(in: .horizontal) {
+                            HStack(spacing: 12) { pageActions(page) }
+                            VStack(spacing: 12) { pageActions(page) }
                         }
                         .buttonStyle(.bordered)
                     }
@@ -138,6 +141,32 @@ struct PageDetailView: View {
             }
         }
         .sheet(isPresented: $showEditor) { editorSheet }
+        .confirmationDialog("删除这一页？", isPresented: $showDeleteConfirmation,
+                            titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                session.delete(id: pageID)
+                dismiss()
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后无法恢复。")
+        }
+    }
+
+    @ViewBuilder
+    private func pageActions(_ page: ScanPage) -> some View {
+        Button("前移") { session.movePage(id: pageID, by: -1) }
+            .disabled(session.document.pages.first?.id == pageID)
+        Button("后移") { session.movePage(id: pageID, by: 1) }
+            .disabled(session.document.pages.last?.id == pageID)
+        Button("重新裁剪") { showEditor = true }
+            .disabled(page.state == .processing)
+        Button("重拍") {
+            session.beginRetake(pageID: pageID)
+            dismiss()
+        }
+        .disabled(page.state == .processing)
+        Button("删除", role: .destructive) { showDeleteConfirmation = true }
     }
 
     private var title: String {
@@ -259,15 +288,43 @@ struct CornerEditorView: View {
     }
 
     private func handle(index: Int, viewSize: CGSize) -> some View {
-        let point = CornerEditorGeometry.viewPoint(fromImage: quad.corners[index],
+        let imagePoint = quad.corners[index]
+        let point = CornerEditorGeometry.viewPoint(fromImage: imagePoint,
                                                    imageSize: workingSize,
                                                    viewSize: viewSize)
+        let names = ["左上角", "右上角", "右下角", "左下角"]
+        let stepX = max(1, workingSize.width / 100)
+        let stepY = max(1, workingSize.height / 100)
         return Circle()
             .fill(activeCorner == index ? Color.yellow : Color.white)
             .frame(width: 28, height: 28)
             .overlay { Circle().stroke(.green, lineWidth: 2) }
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
             .position(point)
             .gesture(dragGesture(index: index, viewSize: viewSize))
+            .accessibilityLabel(names[index])
+            .accessibilityValue("横坐标 \(Int(imagePoint.x))，纵坐标 \(Int(imagePoint.y))")
+            .accessibilityHint("轻扫调整水平位置，也可使用方向移动操作")
+            .accessibilityAdjustableAction { direction in
+                switch direction {
+                case .increment: nudgeCorner(index, dx: stepX, dy: 0)
+                case .decrement: nudgeCorner(index, dx: -stepX, dy: 0)
+                @unknown default: break
+                }
+            }
+            .accessibilityAction(named: "向左移动") { nudgeCorner(index, dx: -stepX, dy: 0) }
+            .accessibilityAction(named: "向右移动") { nudgeCorner(index, dx: stepX, dy: 0) }
+            .accessibilityAction(named: "向上移动") { nudgeCorner(index, dx: 0, dy: -stepY) }
+            .accessibilityAction(named: "向下移动") { nudgeCorner(index, dx: 0, dy: stepY) }
+    }
+
+    private func nudgeCorner(_ index: Int, dx: CGFloat, dy: CGFloat) {
+        let current = quad.corners[index]
+        let destination = CornerEditorGeometry.clamp(
+            CGPoint(x: current.x + dx, y: current.y + dy), to: workingSize)
+        quad = CornerEditorGeometry.dragging(quad, index: index, to: destination,
+                                             imageSize: workingSize)
     }
 
     private func dragGesture(index: Int, viewSize: CGSize) -> some Gesture {
@@ -333,19 +390,24 @@ struct CornerEditorView: View {
     }
 
     private var bottomBar: some View {
-        HStack(spacing: 12) {
-            Button("检测框") { quad = detectedQuad }
-            Button("内缩 6%") { quad = Quad.insetDefault(for: workingSize) }
-            Spacer()
-            Button("取消") { dismiss() }
-            Button("应用") {
-                onConfirm(quad)
-                dismiss()
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!CornerEditorGeometry.isConfirmable(quad, imageSize: workingSize))
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) { bottomButtons }
+            VStack(spacing: 12) { bottomButtons }
         }
         .padding()
         .background(.regularMaterial)
+    }
+
+    @ViewBuilder
+    private var bottomButtons: some View {
+        Button("检测框") { quad = detectedQuad }
+        Button("内缩 6%") { quad = Quad.insetDefault(for: workingSize) }
+        Button("取消") { dismiss() }
+        Button("应用") {
+            onConfirm(quad)
+            dismiss()
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(!CornerEditorGeometry.isConfirmable(quad, imageSize: workingSize))
     }
 }

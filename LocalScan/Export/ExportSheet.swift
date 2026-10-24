@@ -23,23 +23,27 @@ private enum ExportWriter {
     static func write(_ items: [ExportItem],
                       kind: ExportKind,
                       imageFormat: ImageExportFormat) throws -> [URL] {
-        let images: [CGImage] = try items.map { item in
-            guard let rendered = PageFilterRenderer.shared.apply(item.filter,
-                                                                 to: item.image) else {
-                throw ExportFailure.filterFailed
-            }
-            return rendered
-        }
-
         switch kind {
         case .images:
-            return try images.enumerated().map { pair in
-                try ImageExporter.writeTemporaryFile(pair.element,
-                                                     format: imageFormat,
-                                                     index: pair.offset + 1)
+            return try items.enumerated().map { pair in
+                guard let rendered = PageFilterRenderer.shared.apply(pair.element.filter,
+                                                                     to: pair.element.image) else {
+                    throw ExportFailure.filterFailed
+                }
+                return try ImageExporter.writeTemporaryFile(rendered,
+                                                            format: imageFormat,
+                                                            index: pair.offset + 1)
             }
         case .pdf:
-            return [try PDFAssembler.writeTemporaryFile(from: images)]
+            let url = try PDFAssembler.writeTemporaryFile(pageCount: items.count) { index in
+                let item = items[index]
+                guard let rendered = PageFilterRenderer.shared.apply(item.filter,
+                                                                     to: item.image) else {
+                    throw ExportFailure.filterFailed
+                }
+                return rendered
+            }
+            return [url]
         }
     }
 }
@@ -95,10 +99,15 @@ struct ExportSheet: View {
                 }
 
                 Section {
-                    Button(isExporting ? "正在导出…" : "分享") {
+                    Button(isExporting ? "正在导出…" : "分享 \(session.pageCount) 页") {
                         startExport()
                     }
-                    .disabled(isExporting || session.pages.isEmpty)
+                    .disabled(!canExport)
+                    if let exportStatusMessage {
+                        Text(exportStatusMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 if let errorMessage {
@@ -120,6 +129,21 @@ struct ExportSheet: View {
         }
     }
 
+    private var canExport: Bool {
+        !isExporting && !session.pages.isEmpty
+            && session.pages.allSatisfy { $0.correctedImage != nil }
+    }
+
+    private var exportStatusMessage: String? {
+        if session.pages.contains(where: { $0.state == .failed }) {
+            return "有页面处理失败，请重拍后再导出。"
+        }
+        if session.pages.contains(where: { $0.state == .processing }) {
+            return "页面仍在处理，完成后即可导出。"
+        }
+        return nil
+    }
+
     private func startExport() {
         guard !session.pages.isEmpty else {
             errorMessage = "没有可导出的页面。"
@@ -130,7 +154,9 @@ struct ExportSheet: View {
             return ExportItem(image: image, filter: page.filter)
         }
         guard items.count == session.pages.count else {
-            errorMessage = "还有页面正在处理，请稍后再导出。"
+            errorMessage = session.pages.contains(where: { $0.state == .failed })
+                ? "有页面处理失败，请重拍后再导出。"
+                : "还有页面正在处理，请稍后再导出。"
             return
         }
 

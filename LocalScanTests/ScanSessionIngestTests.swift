@@ -59,6 +59,29 @@ final class ScanSessionIngestTests: XCTestCase {
     }
 
     @MainActor
+    func testBackToBackIngestKeepsCaptureOrder() async throws {
+        let firstData = try jpegData(from: TestImages.page(size: originalSize, quad: pageQuad))
+        let secondData = try jpegData(from: TestImages.page(size: originalSize, quad: pageQuad))
+        let session = ScanSession()
+
+        session.ingest(capturedData: firstData)
+        session.ingest(capturedData: secondData)
+        let deadline = Date().addingTimeInterval(30)
+        while session.pages.count < 2
+                || session.pages.contains(where: { $0.state == .processing }) {
+            if Date() >= deadline {
+                XCTFail("连拍处理超时")
+                return
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+
+        XCTAssertEqual(session.pages.map(\.originalData), [firstData, secondData])
+        XCTAssertTrue(session.pages.allSatisfy { $0.state == .done },
+                      session.errorMessage ?? "连拍处理失败")
+    }
+
+    @MainActor
     func testRetakeReplacesPageWithoutAddingAnother() async throws {
         let firstData = try jpegData(from: TestImages.page(size: originalSize,
                                                            quad: pageQuad))

@@ -7,7 +7,7 @@ enum PageFilter: String, CaseIterable, Identifiable {
     /// 经典增强：光照归一化 + 温和对比度 + 轻锐化（确定性，不生成内容）。
     case enhance
     case grayscale
-    /// 灰度 + 固定阈值。
+    /// 光照归一化 + 灰度阈值，避免固定阈值把阴影区域整片判黑。
     case blackWhite
 
     var id: String { rawValue }
@@ -105,6 +105,13 @@ struct ScanDocument {
               from != target else { return }
         let to = target > from ? target - 1 : target
         pages.insert(pages.remove(at: from), at: min(max(0, to), pages.count))
+    }
+
+    mutating func movePage(id: UUID, by offset: Int) {
+        guard let from = pages.firstIndex(where: { $0.id == id }) else { return }
+        let destination = from + offset
+        guard pages.indices.contains(destination) else { return }
+        pages.insert(pages.remove(at: from), at: destination)
     }
 
     /// 重拍：保留原 id 与原位置，只替换内容。

@@ -25,7 +25,9 @@ final class PageFilterRenderer {
             guard let gray = monochrome(CIImage(cgImage: image)) else { return nil }
             return render(gray)
         case .blackWhite:
-            guard let gray = monochrome(CIImage(cgImage: image)),
+            let source = CIImage(cgImage: image)
+            guard let normalized = enhance(source),
+                  let gray = monochrome(normalized),
                   let thresholded = threshold(gray) else { return nil }
             return render(thresholded)
         }

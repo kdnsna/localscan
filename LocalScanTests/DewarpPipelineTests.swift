@@ -64,6 +64,12 @@ final class DewarpPipelineTests: XCTestCase {
                                                   y: 40), 120)
     }
 
+    func testDisabledUVDocSafelyFallsBack() {
+        let dewarper = UVDocDewarper(bundle: .main, featureFlagEnabled: false)
+        XCTAssertFalse(dewarper.isAvailable)
+        XCTAssertNil(dewarper.dewarp(TestImages.gridPage(size: size)))
+    }
+
     func testManualCorrectAlsoRunsCurvatureDetection() async throws {
         let image = TestImages.gridPage(size: size, amplitude: 16)
         let dewarper = RecordingDewarper()

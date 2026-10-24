@@ -13,6 +13,20 @@ struct ContentView: View {
             CameraView(controller: camera,
                        bottomInset: session.pageCount == 0 ? 0 : 96)
 
+            if session.pendingRetakePageID != nil {
+                HStack(spacing: 12) {
+                    Text("重拍模式：下一张将替换所选页面")
+                        .font(.footnote.weight(.semibold))
+                    Button("取消") { session.cancelRetake() }
+                        .font(.footnote.weight(.semibold))
+                }
+                .padding(12)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.top, 88)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .accessibilityElement(children: .contain)
+            }
+
             if session.pageCount > 0 {
                 PageStrip(session: session) { selectedPageID = $0 }
             }

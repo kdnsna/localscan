@@ -77,6 +77,23 @@ final class PDFAssemblerTests: XCTestCase {
         XCTAssertEqual(PDFAssembler.pageSize(forPixelSize: .zero), .zero)
     }
 
+    func testStreamingPDFWritesEveryRequestedPage() throws {
+        let images = (0..<3).map { _ in syntheticImage(width: 400, height: 600) }
+        let url = try PDFAssembler.writeTemporaryFile(pageCount: images.count,
+                                                      pageAt: { images[$0] },
+                                                      index: 90)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let document = try XCTUnwrap(PDFDocument(url: url))
+        XCTAssertEqual(document.pageCount, 3)
+        let expected = PDFAssembler.pageSize(forPixelSize: CGSize(width: 400, height: 600))
+        for index in 0..<3 {
+            let bounds = try XCTUnwrap(document.page(at: index)?.bounds(for: .mediaBox))
+            XCTAssertEqual(bounds.width, expected.width, accuracy: 0.5)
+            XCTAssertEqual(bounds.height, expected.height, accuracy: 0.5)
+        }
+    }
+
     func testThreePagePDFHasThreePages() throws {
         let images = (0..<3).map { _ in syntheticImage(width: 400, height: 600) }
         let data = try PDFAssembler.makePDF(from: images)
