@@ -37,10 +37,17 @@ enum DocumentQuadDetector {
               imageSize.width > 0, imageSize.height > 0 else { return nil }
         let pixel = DocumentDetectorGeometry.quad(fromVisionPoints: points)
             .scaled(by: imageSize.width, imageSize.height)
-        let minimumArea = max(CGFloat(1),
-                              imageSize.width * imageSize.height * minimumAreaFraction)
-        guard pixel.isFinite, pixel.isConvex,
-              pixel.area.isFinite, pixel.area >= minimumArea else { return nil }
+        guard isValid(pixel, imageSize: imageSize) else { return nil }
         return pixel
+    }
+
+    static func isValid(_ quad: Quad,
+                        imageSize: CGSize,
+                        minimumAreaFraction: CGFloat = DocumentQuadDetector.minimumAreaFraction) -> Bool {
+        guard imageSize.width.isFinite, imageSize.height.isFinite,
+              imageSize.width > 0, imageSize.height > 0 else { return false }
+        let minimumArea = imageSize.width * imageSize.height * minimumAreaFraction
+        return quad.isFinite && quad.isConvex
+            && quad.area.isFinite && quad.area >= minimumArea
     }
 }

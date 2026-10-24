@@ -100,6 +100,22 @@ final class ScanDocumentTests: XCTestCase {
                        [.original, .enhance, .grayscale, .blackWhite])
     }
 
+    func testMovePageByOffsetSupportsAccessibleOrdering() {
+        let a = page(x: 10)
+        let b = page(x: 20)
+        let c = page(x: 30)
+        var document = ScanDocument(pages: [a, b, c])
+
+        document.movePage(id: c.id, by: -1)
+        XCTAssertEqual(document.pages.map(\.id), [a, c, b].map(\.id))
+        document.movePage(id: a.id, by: 1)
+        XCTAssertEqual(document.pages.map(\.id), [c, a, b].map(\.id))
+        document.movePage(id: c.id, by: -1)
+        XCTAssertEqual(document.pages.map(\.id), [c, a, b].map(\.id))
+        document.movePage(id: b.id, by: 1)
+        XCTAssertEqual(document.pages.map(\.id), [c, a, b].map(\.id))
+    }
+
     func testMovePageBeforeTargetForStripDrag() {
         let a = page(x: 10)
         let b = page(x: 20)

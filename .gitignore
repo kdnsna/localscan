@@ -31,3 +31,7 @@ eval/data/
 *.onnx
 *.pt
 *.pth
+
+# 用户明确审核并要求随包发布的 UVDoc FP16 模型（来源与许可见 docs/MODELS.md）。
+!LocalScan/Resources/Models/UVDocCoreML.mlpackage/
+!LocalScan/Resources/Models/UVDocCoreML.mlpackage/Data/com.apple.CoreML/model.mlmodel

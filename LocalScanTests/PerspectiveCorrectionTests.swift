@@ -50,6 +50,16 @@ final class PerspectiveCorrectionTests: XCTestCase {
         }
     }
 
+    func testOutputPixelBudgetRejectsBeforeRendering() {
+        let corrector = PerspectiveCorrector(maximumOutputPixelCount: 1_000)
+        XCTAssertThrowsError(try corrector.correct(sourceImage(),
+                                                   quad: quad,
+                                                   workingSize: size)) { error in
+            XCTAssertEqual(error as? PerspectiveCorrectionError,
+                           PerspectiveCorrectionError.outputTooLarge)
+        }
+    }
+
     func testQueueProcessesFullResolutionPage() async throws {
         let image = sourceImage()
         let result = try await ProcessingQueue().process(original: image,

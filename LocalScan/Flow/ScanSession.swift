@@ -23,6 +23,7 @@ final class ScanSession: ObservableObject {
     let images = PageImageStore()
     private let decoder = CaptureDecoder()
     private let queue = ProcessingQueue()
+    private var ingestTail: Task<Void, Never>?
     /// 丢弃重新裁剪/重拍后到达的旧处理结果。
     private var tokens: [UUID: UUID] = [:]
 
@@ -55,6 +56,10 @@ final class ScanSession: ObservableObject {
 
     func movePage(id: UUID, before targetID: UUID) {
         document.movePage(id: id, before: targetID)
+    }
+
+    func movePage(id: UUID, by offset: Int) {
+        document.movePage(id: id, by: offset)
     }
 
     func deletePages(atOffsets offsets: IndexSet) {
@@ -129,7 +134,9 @@ final class ScanSession: ObservableObject {
 
         let decoder = self.decoder
         let queue = self.queue
-        Task { [weak self] in
+        let previous = ingestTail
+        ingestTail = Task { [weak self] in
+            await previous?.value
             do {
                 let prepared = try await Task.detached(priority: .userInitiated) {
                     let decoded = try decoder.decode(capturedData)

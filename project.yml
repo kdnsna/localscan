@@ -16,6 +16,10 @@ targets:
     platform: iOS
     sources:
       - path: LocalScan
+        excludes:
+          - Resources/Models/UVDocCoreML.mlpackage
+      - path: LocalScan/Resources/Models/UVDocCoreML.mlpackage
+        buildPhase: sources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.kdnsna.localscan

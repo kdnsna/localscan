@@ -13,6 +13,7 @@ final class CameraController: NSObject, ObservableObject {
 
     @Published private(set) var authorizationState: AuthorizationState = .unknown
     @Published private(set) var isRunning = false
+    @Published private(set) var isCapturing = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastCapturedData: Data?
     @Published private(set) var overlayQuad: Quad?
@@ -245,6 +246,7 @@ final class CameraController: NSObject, ObservableObject {
         guard !isCaptureInFlight else { return false }
         isCaptureInFlight = true
         captureCompletion = completion
+        DispatchQueue.main.async { self.isCapturing = true }
         return true
     }
 
@@ -255,6 +257,7 @@ final class CameraController: NSObject, ObservableObject {
         isCaptureInFlight = false
         let completion = captureCompletion
         captureCompletion = nil
+        DispatchQueue.main.async { self.isCapturing = false }
         return completion
     }
 

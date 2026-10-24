@@ -134,12 +134,27 @@ struct CameraView: View {
     }
 
     private var hint: some View {
-        Text(controller.overlayQuad == nil ? "对准文档" : "保持稳定")
-            .font(.headline)
-            .foregroundStyle(.white)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(.black.opacity(0.45), in: Capsule())
+        VStack(spacing: 8) {
+            Text(controller.overlayQuad == nil ? "对准文档" : "保持稳定")
+                .font(.headline)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(.black.opacity(0.45), in: Capsule())
+            if let statusMessage {
+                Label(statusMessage, systemImage: "exclamationmark.triangle.fill")
+                    .font(.footnote)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .foregroundStyle(.white)
+    }
+
+    private var statusMessage: String? {
+        if controller.isInterrupted { return controller.interruptionHint }
+        return controller.errorMessage
     }
 
     private var controls: some View {
@@ -161,6 +176,9 @@ struct CameraView: View {
                 ZStack {
                     Circle().stroke(.white, lineWidth: 4)
                     Circle().fill(.white).padding(7)
+                    if controller.isCapturing {
+                        ProgressView().tint(.black)
+                    }
                 }
                 .frame(width: 74, height: 74)
             }
@@ -168,6 +186,7 @@ struct CameraView: View {
             .disabled(!canCapture)
             .opacity(canCapture ? 1 : 0.4)
             .accessibilityLabel("快门")
+            .accessibilityValue(controller.isCapturing ? "正在拍摄" : "")
 
             Spacer()
             Color.clear.frame(width: 104, height: 1)
@@ -176,6 +195,7 @@ struct CameraView: View {
 
     private var canCapture: Bool {
         controller.authorizationState == .authorized && controller.isRunning
+            && !controller.isCapturing && !controller.isInterrupted
     }
 
     private var permissionMessage: String? {
